@@ -80,8 +80,16 @@ if (args.Length > 0 && (args[0] == "issue" || args[0] == "issue-batch"))
             EventName = string.IsNullOrWhiteSpace(body.EventName)
                 ? (targetEventId == "local-demo" ? "Local testing event" : targetEventId)
                 : body.EventName.Trim(),
-            TemplateId = "default"
+            TemplateId = string.IsNullOrWhiteSpace(body.TemplateId) ? "default" : body.TemplateId.Trim()
         };
+        if (!string.IsNullOrWhiteSpace(body.EventName))
+        {
+            eventOptions.EventName = body.EventName.Trim();
+        }
+        if (!string.IsNullOrWhiteSpace(body.TemplateId))
+        {
+            eventOptions.TemplateId = body.TemplateId.Trim();
+        }
 
         var sourceId = Guid.NewGuid().ToString("N");
         var submission = new SheetSubmission(
@@ -96,7 +104,7 @@ if (args.Length > 0 && (args[0] == "issue" || args[0] == "issue-batch"))
             new Dictionary<string, string>());
 
         var (certificate, _) = await repository.GetOrCreateAsync(submission, eventOptions, CancellationToken.None);
-        var artifact = await artifacts.CreateAsync(certificate, CancellationToken.None);
+        var artifact = await artifacts.CreateAsync(certificate, body.Layout, CancellationToken.None);
         await repository.MarkIssuedAsync(certificate.Id, artifact.ArtifactPath, artifact.Sha256, artifact.SignerThumbprint, eventOptions, CancellationToken.None);
 
         var result = new
@@ -132,6 +140,14 @@ if (args.Length > 0 && (args[0] == "issue" || args[0] == "issue-batch"))
                 : body.EventName.Trim(),
             TemplateId = string.IsNullOrWhiteSpace(body.TemplateId) ? "default" : body.TemplateId.Trim()
         };
+        if (!string.IsNullOrWhiteSpace(body.EventName))
+        {
+            eventOptions.EventName = body.EventName.Trim();
+        }
+        if (!string.IsNullOrWhiteSpace(body.TemplateId))
+        {
+            eventOptions.TemplateId = body.TemplateId.Trim();
+        }
 
         var results = new List<object>();
         foreach (var recipient in body.Recipients)
@@ -152,7 +168,7 @@ if (args.Length > 0 && (args[0] == "issue" || args[0] == "issue-batch"))
                     new Dictionary<string, string>());
 
                 var (cert, _) = await repository.GetOrCreateAsync(submission, eventOptions, CancellationToken.None);
-                var artifact = await artifacts.CreateAsync(cert, CancellationToken.None);
+                var artifact = await artifacts.CreateAsync(cert, body.Layout, CancellationToken.None);
                 await repository.MarkIssuedAsync(cert.Id, artifact.ArtifactPath, artifact.Sha256, artifact.SignerThumbprint, eventOptions, CancellationToken.None);
                 results.Add(new
                 {

@@ -1,4 +1,5 @@
 import Link from "next/link"
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import {
   ArrowLeft,
@@ -10,13 +11,10 @@ import {
   FileCheck2,
   Hash,
 } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Logo } from "@/components/logo"
 import { Footer } from "@/components/footer"
-import { CertStage } from "@/components/credential/cert-stage"
-import { WaxSeal } from "@/components/credential/wax-seal"
-import { CertificatePreview } from "@/components/certificate-preview"
+import { TamperProofCertificateViewer } from "@/components/verify/tamper-proof-certificate-viewer"
 import { CredentialActions } from "@/components/credential/credential-actions"
 import { EvervaultCard, Icon } from "@/components/ui/evervault-card"
 import { DitherShader } from "@/components/ui/dither-shader"
@@ -60,6 +58,32 @@ async function fetchVerification(publicId: string): Promise<VerificationResult |
   }
 }
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const cert = getCertificateByPublicId(id)
+  return {
+    title: cert
+      ? `${cert.participantName} — Clinically Evolve Verified Credential`
+      : "Verify Credential — Clinically Evolve",
+    description: cert
+      ? `Official cryptographic verification for ${cert.participantName}'s credential issued by Clinically Evolve.`
+      : "Official cryptographic verification portal for Clinically Evolve credentials.",
+    icons: {
+      icon: [
+        { url: "/icon.png", type: "image/png" },
+        { url: "/favicon.ico" },
+        { url: "/logo.png", type: "image/png" },
+      ],
+      apple: "/logo.png",
+      shortcut: "/favicon.ico",
+    },
+  }
+}
+
 export default async function VerifyCertificatePage({
   params,
 }: {
@@ -69,7 +93,10 @@ export default async function VerifyCertificatePage({
   const verification = await fetchVerification(id)
   if (!verification) notFound()
 
-  const template = resolveTemplate("heritage-rust")
+  const certificateRecord = getCertificateByPublicId(id)
+  const templateId = verification.templateId || certificateRecord?.templateId || "heritage-rust"
+  const isCustomTemplate = templateId.toLowerCase().startsWith("custom-")
+  const template = resolveTemplate(templateId)
   const accent = template.accent
   const isRevoked = verification.status === "Revoked"
   const isValid = verification.status === "Valid" || (!isRevoked && verification.signatureValid)
@@ -150,46 +177,38 @@ export default async function VerifyCertificatePage({
         </div>
 
         <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[1fr_280px]">
-          {/* 3D Certificate Presentation Stage */}
-          <CertStage>
-            <div className="print-sheet relative mx-auto w-full max-w-xl rise rise-1 [transform-style:preserve-3d]">
-              <div
-                aria-hidden="true"
-                className="float-slow pointer-events-none absolute -inset-6 -z-10 rounded-3xl opacity-70"
-                style={{
-                  background: `radial-gradient(closest-side, ${accent}26, transparent)`,
-                  filter: "blur(24px)",
-                  transform: "translateZ(-30px)",
-                }}
-              />
-              <div className="sheen relative [transform-style:preserve-3d]">
-                <CertificatePreview
-                  template={template}
-                  recipientName={verification.participantName}
-                  eventName={verification.eventName}
-                  issueDate={verification.issuedAtUtc ? formatDate(verification.issuedAtUtc) : "—"}
-                  credentialId={verification.publicId}
-                  className="[transform:translateZ(10px)]"
-                />
-                <WaxSeal
-                  accent={accent}
-                  className="absolute -bottom-5 -right-4 sm:-right-7 drop-shadow-2xl [transform:translateZ(60px)] transition-transform duration-500"
-                />
-              </div>
-              <p className="print-hide mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground [transform:translateZ(20px)]">
-                <CalendarDays className="size-3.5" />
-                {verification.issuedAtUtc ? `Issued ${formatDate(verification.issuedAtUtc)}` : "Pending"} · #{verification.certificateNumber}
-              </p>
-            </div>
-          </CertStage>
+          {/* Static certificate document */}
+          <div className="print-sheet relative mx-auto w-full max-w-3xl rise rise-1">
+            <TamperProofCertificateViewer
+              pdfUrl={`/api/certificates/${encodeURIComponent(verification.publicId)}/download`}
+              publicId={verification.publicId}
+              certificateNumber={verification.certificateNumber}
+              participantName={verification.participantName}
+              eventName={verification.eventName}
+              issueDate={verification.issuedAtUtc ? formatDate(verification.issuedAtUtc) : "—"}
+              template={template}
+              isCustomTemplate={isCustomTemplate}
+            />
+            <p className="print-hide mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+              <CalendarDays className="size-3.5" />
+              {verification.issuedAtUtc ? `Issued ${formatDate(verification.issuedAtUtc)}` : "Pending"} · #{verification.certificateNumber}
+            </p>
+          </div>
 
           {/* Actions & Cryptographic Proof */}
           <aside className="print-hide rise rise-2 flex flex-col gap-4 lg:sticky lg:top-24">
             <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-              <Badge variant="secondary" className="w-full justify-center" style={{ color: accent }}>
-                <Award className="size-3 mr-1" />
-                Verified Credential
-              </Badge>
+              {isRevoked ? (
+                <div className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-destructive/40 bg-destructive/15 px-3 py-2 text-xs font-semibold text-destructive shadow-sm">
+                  <ShieldX className="size-3.5 text-destructive shrink-0" />
+                  <span>Certificate Revoked</span>
+                </div>
+              ) : (
+                <div className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-xs font-semibold tracking-wide text-emerald-400 shadow-sm">
+                  <ShieldCheck className="size-3.5 text-emerald-400 shrink-0" />
+                  <span>Verified Credential</span>
+                </div>
+              )}
               <div className="mt-4 flex flex-col gap-2.5">
                 <CredentialActions
                   publicId={verification.publicId}

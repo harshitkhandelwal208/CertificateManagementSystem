@@ -10,6 +10,7 @@ import { Stepper } from "@/components/dashboard/stepper"
 import { Button } from "@/components/ui/button"
 import { CertificatePreview } from "@/components/certificate-preview"
 import { PdfUploadZone } from "@/components/template/pdf-upload-zone"
+import { CustomPdfPreview, useCustomPdfTemplate } from "@/components/template/custom-pdf-preview"
 import { credentialTemplates } from "@/lib/templates"
 import { loadDraft } from "@/app/events/new/page"
 import { cn } from "@/lib/utils"
@@ -20,6 +21,8 @@ export default function NewEventTemplatePage() {
   const [draftChecked, setDraftChecked] = useState(false)
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [showCustomPreview, setShowCustomPreview] = useState(false)
+  const customTemplate = useCustomPdfTemplate("new-event")
 
   useEffect(() => {
     const draft = loadDraft()
@@ -38,8 +41,10 @@ export default function NewEventTemplatePage() {
   const handlePdfUpload = async (file: File) => {
     setUploading(true)
     try {
+      await customTemplate.saveFile(file)
+      setShowCustomPreview(true)
       toast.success("PDF Template Ready", {
-        description: `${file.name} is ready to use. Template configuration coming next.`,
+        description: `${file.name} will be used for the preview and issued certificates.`,
       })
       setShowUploadModal(false)
     } catch (error) {
@@ -74,13 +79,16 @@ export default function NewEventTemplatePage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,320px)_1fr]">
+              <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,320px)_1fr]">
             <div className="flex flex-col gap-3">
               {credentialTemplates.map((template) => (
                 <button
                   key={template.id}
                   type="button"
-                  onClick={() => setSelected(template.id)}
+                  onClick={() => {
+                    setSelected(template.id)
+                    setShowCustomPreview(false)
+                  }}
                   className={cn(
                     "flex items-center gap-3 rounded-xl border p-4 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     selected === template.id
@@ -131,7 +139,7 @@ export default function NewEventTemplatePage() {
                 <div className="rounded-xl border border-border bg-card p-4">
                   <PdfUploadZone onFileAccepted={handlePdfUpload} disabled={uploading} />
                   <p className="mt-3 text-xs text-muted-foreground">
-                    📋 After upload, you'll configure where text appears on your PDF
+                    Sample recipient data will appear in the confirmation preview and on issued certificates.
                   </p>
                 </div>
               )}
@@ -141,15 +149,19 @@ export default function NewEventTemplatePage() {
               <p className="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 Live preview
               </p>
-              <CertificatePreview
-                key={activeTemplate.id}
-                className="rise"
-                template={activeTemplate}
-                recipientName="Jordan Ellery"
-                eventName="Your Event Name"
-                issueDate="Sep 20th, 2026"
-                credentialId="preview-mode"
-              />
+              {showCustomPreview && customTemplate.pdfUrl ? (
+                <CustomPdfPreview storageKey="new-event" className="rise" />
+              ) : (
+                <CertificatePreview
+                  key={activeTemplate.id}
+                  className="rise"
+                  template={activeTemplate}
+                  recipientName="Jordan Ellery"
+                  eventName="Your Event Name"
+                  issueDate="Sep 20th, 2026"
+                  credentialId="preview-mode"
+                />
+              )}
             </div>
           </div>
 
@@ -157,7 +169,7 @@ export default function NewEventTemplatePage() {
             <Button variant="outline" render={<Link href="/events/new" />}>
               Cancel
             </Button>
-            <Button render={<Link href={`/events/new/preview?template=${selected}`} />}>
+            <Button render={<Link href={`/events/new/preview?template=${selected}&custom=${showCustomPreview ? "1" : "0"}`} />}>
               Continue
               <ArrowRight data-icon="inline-end" />
             </Button>

@@ -78,21 +78,34 @@ export function CredentialActions({
 
   return (
     <>
-      <Button className="w-full justify-start" onClick={() => downloadCertificate(publicId)}>
-        <Download data-icon="inline-start" />
+      <Button
+        className="w-full justify-start h-10 px-3.5 bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm shadow-sm transition-all"
+        onClick={() => downloadCertificate(publicId)}
+      >
+        <Download data-icon="inline-start" className="size-4 text-white" />
         Download certificate
       </Button>
       <Button
         variant="outline"
-        className="w-full justify-start"
+        className="w-full justify-start h-10 px-3.5 border-border/80 bg-neutral-900/60 hover:bg-neutral-800 text-neutral-100 hover:text-white font-medium text-sm transition-all"
         render={<a href={linkedInUrl} target="_blank" rel="noopener noreferrer" />}
       >
-        <LinkedinIcon className="size-4" data-icon="inline-start" />
+        <LinkedinIcon className="size-4 text-[#0a66c2]" data-icon="inline-start" />
         Add to LinkedIn profile
       </Button>
-      <Button variant="outline" className="w-full justify-start" onClick={copyLink}>
-        {copied ? <Check data-icon="inline-start" className="text-success" /> : <Copy data-icon="inline-start" />}
-        {copied ? "Copied" : "Copy verification link"}
+      <Button
+        variant="outline"
+        className="w-full justify-start h-10 px-3.5 border-border/80 bg-neutral-900/60 hover:bg-neutral-800 text-neutral-100 hover:text-white font-medium text-sm transition-all"
+        onClick={copyLink}
+      >
+        {copied ? (
+          <Check data-icon="inline-start" className="size-4 text-emerald-400" />
+        ) : (
+          <Copy data-icon="inline-start" className="size-4 text-neutral-400" />
+        )}
+        <span className={copied ? "text-emerald-400 font-medium" : ""}>
+          {copied ? "Link Copied" : "Copy verification link"}
+        </span>
       </Button>
     </>
   )

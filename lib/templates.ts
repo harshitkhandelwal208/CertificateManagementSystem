@@ -39,10 +39,10 @@ export function resolveTemplate(id: string): CredentialTemplate {
   return (
     getTemplate(id) ?? {
       id,
-      name: 'Default',
-      description: '',
-      accent: '#5c4632',
-      accentSoft: '#ece2d2',
+      name: id.toLowerCase().startsWith('custom-') ? 'Custom PDF' : 'Default',
+      description: id.toLowerCase().startsWith('custom-') ? 'Custom uploaded PDF template' : '',
+      accent: id.toLowerCase().startsWith('custom-') ? '#2563eb' : '#5c4632',
+      accentSoft: id.toLowerCase().startsWith('custom-') ? '#dbeafe' : '#ece2d2',
     }
   )
 }

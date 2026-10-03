@@ -32,22 +32,34 @@ function IssueContent() {
   const params = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const router = useRouter()
-  const defaultTemplate = searchParams.get("template") ?? credentialTemplates[0].id
+  const customTemplateKey = searchParams.get("custom") === "1" ? searchParams.get("customKey") : null
+  const customTemplateId = customTemplateKey
+    ? `custom-${customTemplateKey.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "")}`
+    : null
+  const defaultTemplate = customTemplateId ?? searchParams.get("template") ?? credentialTemplates[0].id
   const [templateId, setTemplateId] = useState(defaultTemplate)
+  const [eventCustomTemplate, setEventCustomTemplate] = useState<string | null>(null)
   const [consent, setConsent] = useState(false)
   const [recipientsValid, setRecipientsValid] = useState(false)
   const [manualRecipients, setManualRecipients] = useState<Recipient[]>([])
   const [csvRecipients, setCsvRecipients] = useState<ParsedRecipient[]>([])
   const [mode, setMode] = useState("manual")
   const [submitting, setSubmitting] = useState(false)
-  const [eventName, setEventName] = useState(params.id)
+  const queryEventName = searchParams.get("name")
+  const [eventName, setEventName] = useState(() => queryEventName || params.id)
 
   useEffect(() => {
-    // Try to get real event name from API
+    // Try to get real event name and assigned template from API
     fetch(`/api/events/${encodeURIComponent(params.id)}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.eventName) setEventName(data.eventName)
+        if (data?.templateId) {
+          setTemplateId((prev) => (prev === credentialTemplates[0].id ? data.templateId : prev))
+          if (typeof data.templateId === "string" && data.templateId.startsWith("custom-")) {
+            setEventCustomTemplate(data.templateId)
+          }
+        }
       })
       .catch(() => {})
   }, [params.id])
@@ -86,6 +98,7 @@ function IssueContent() {
             email: recipients[0].email,
             eventId: params.id,
             eventName: eventName,
+            templateId,
           }),
         })
         if (!res.ok) {
@@ -196,6 +209,12 @@ function IssueContent() {
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
+                {customTemplateId && (
+                  <SelectItem value={customTemplateId}>Uploaded PDF template</SelectItem>
+                )}
+                {eventCustomTemplate && eventCustomTemplate !== customTemplateId && (
+                  <SelectItem value={eventCustomTemplate}>Assigned PDF template ({eventCustomTemplate})</SelectItem>
+                )}
                 {credentialTemplates.map((template) => (
                   <SelectItem key={template.id} value={template.id}>
                     <span
@@ -208,6 +227,8 @@ function IssueContent() {
               </SelectGroup>
             </SelectContent>
           </Select>
+
+
 
           <label className="mt-5 flex items-start gap-2.5 text-sm text-foreground cursor-pointer">
             <Checkbox checked={consent} onCheckedChange={(v) => setConsent(Boolean(v))} className="mt-0.5" />

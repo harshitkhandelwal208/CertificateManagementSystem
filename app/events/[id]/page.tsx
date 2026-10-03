@@ -132,14 +132,11 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
       if (detail) {
         setDetail({
           ...detail,
-          certificates: {
-            ...detail.certificates,
-            items: detail.certificates.items.map((c) =>
-              c.publicId === revokingCert.publicId
-                ? { ...c, status: "Revoked", revokedAt: new Date().toISOString(), revocationReason: revocationReason.trim() }
-                : c
-            ),
-          },
+          certificates: detail.certificates.map((c) =>
+            c.publicId === revokingCert.publicId
+              ? { ...c, status: "Revoked", revokedAt: new Date().toISOString(), revocationReason: revocationReason.trim() }
+              : c
+          ),
         })
       }
 
@@ -171,7 +168,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
   }
 
   const template = resolveTemplate(detail.templateId)
-  const credentialList = detail.certificates?.items || []
+  const credentialList = detail.certificates || []
   const progress = detail.totalCount > 0 ? Math.round((detail.issuedCount / detail.totalCount) * 100) : 0
 
   return (
@@ -188,7 +185,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
             <RefreshCw className={`size-3.5 ${isPolling ? "animate-spin" : ""}`} />
             <span className="hidden sm:inline">Sync Responses</span>
           </Button>
-          <Button render={<Link href={`/events/${detail.eventId}/issue`} />}>
+          <Button render={<Link href={`/events/${detail.eventId}/issue?template=${encodeURIComponent(detail.templateId)}&custom=${detail.templateId?.startsWith("custom-") ? "1" : "0"}&customKey=${encodeURIComponent(detail.templateId)}&name=${encodeURIComponent(detail.eventName)}`} />}>
             <Send data-icon="inline-start" />
             Issue Credentials
           </Button>
@@ -340,7 +337,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
             <EmptyDescription>Issue your first batch of credentials for this event using manual entry or CSV upload.</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button render={<Link href={`/events/${detail.eventId}/issue`} />}>
+            <Button render={<Link href={`/events/${detail.eventId}/issue?template=${encodeURIComponent(detail.templateId)}&custom=${detail.templateId?.startsWith("custom-") ? "1" : "0"}&customKey=${encodeURIComponent(detail.templateId)}&name=${encodeURIComponent(detail.eventName)}`} />}>
               <Send data-icon="inline-start" />
               Issue credentials
             </Button>

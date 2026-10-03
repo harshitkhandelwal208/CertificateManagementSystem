@@ -137,4 +137,27 @@ public sealed class Phase1ApiTests : IDisposable
         Assert.Equal(1, filtered.TotalCount);
         Assert.Equal("Alice Wonderland", filtered.Items[0].ParticipantName);
     }
+
+    [Fact]
+    public async Task CertificateWithCustomTemplateRecordsTemplateId()
+    {
+        var eventOpts = new EventSourceOptions
+        {
+            EventId = "custom-event",
+            EventName = "Custom Event",
+            TemplateId = "custom-my-template"
+        };
+
+        var submission = new SheetSubmission(
+            "custom-event", "Custom Event", "hash", "1", 1,
+            new Participant("p_custom", "Dave Custom", "dave@test.org", null),
+            "p_custom", null, new Dictionary<string, string>());
+
+        var (cert, _) = await _repository.GetOrCreateAsync(submission, eventOpts, CancellationToken.None);
+        Assert.Equal("custom-my-template", cert.TemplateId);
+
+        var retrieved = await _repository.FindByPublicIdAsync(cert.PublicId, CancellationToken.None);
+        Assert.NotNull(retrieved);
+        Assert.Equal("custom-my-template", retrieved.TemplateId);
+    }
 }

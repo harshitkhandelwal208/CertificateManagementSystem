@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { recipients, eventId, eventName, templateId } = body;
+    const { recipients, eventId, eventName, templateId, layout } = body;
 
     if (!Array.isArray(recipients) || recipients.length === 0) {
       return NextResponse.json({ error: 'Recipients must be a non-empty array' }, { status: 400 });
@@ -21,6 +21,7 @@ export async function POST(request: Request) {
       eventId,
       eventName,
       templateId,
+      layout,
     });
 
     // Format for existing frontend components: array of results

@@ -2,12 +2,23 @@ namespace CertificateEngine.Api;
 
 public sealed record RevokeRequest(string Reason);
 
+public sealed record TemplateLayoutDto(
+    double XPercent,
+    double YPercent,
+    double FontSize,
+    string? FontFamily = null,
+    string? FontWeight = null,
+    string? Color = null,
+    string? TextAlign = null);
+
 public sealed record DemoIssueRequest(
     string FullName,
     string? EventName = null,
     string? EventId = null,
     string? Email = null,
-    string? Phone = null);
+    string? Phone = null,
+    string? TemplateId = null,
+    TemplateLayoutDto? Layout = null);
 
 public sealed record BatchIssueRecipient(
     string Name,
@@ -18,7 +29,8 @@ public sealed record BatchIssueRequest(
     List<BatchIssueRecipient> Recipients,
     string? EventId = null,
     string? EventName = null,
-    string? TemplateId = null);
+    string? TemplateId = null,
+    TemplateLayoutDto? Layout = null);
 
 public sealed record LoginRequest(string Email, string Password);
 

@@ -9,6 +9,7 @@
     <PackageReference Include="MailKit" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="PDFsharp" />
+    <PackageReference Include="UglyToad.PdfPig" />
     <PackageReference Include="QRCoder" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>

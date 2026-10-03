@@ -1,25 +1,49 @@
 import { cn } from "@/lib/utils"
-import { ShieldCheck } from "lucide-react"
 
 export function LogoMark({ className }: { className?: string }) {
   return (
-    <div className={cn("flex size-9 items-center justify-center rounded-lg bg-primary/10 border border-primary/20 text-primary shadow-sm", className)}>
-      <ShieldCheck className="size-5 text-primary" />
+    <div
+      className={cn(
+        "relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-0.5 shadow-sm border border-border/80 transition-transform hover:scale-105",
+        className
+      )}
+    >
+      <img
+        src="/logo.png"
+        alt="Clinically Evolve"
+        className="h-full w-full object-contain"
+        loading="eager"
+      />
     </div>
   )
 }
 
-export function Logo({ className, wordmarkClassName }: { className?: string; wordmarkClassName?: string }) {
+export function Logo({
+  className,
+  wordmarkClassName,
+  showSubtitle = true,
+}: {
+  className?: string
+  wordmarkClassName?: string
+  showSubtitle?: boolean
+}) {
   return (
-    <div className={cn("flex items-center gap-3", className)}>
+    <div className={cn("flex items-center gap-2.5 group", className)}>
       <LogoMark />
       <div className="flex flex-col">
-        <span className={cn("font-serif text-lg font-semibold tracking-tight text-foreground leading-none", wordmarkClassName)}>
-          CertOps Portal
+        <span
+          className={cn(
+            "font-sans text-sm font-bold tracking-tight text-foreground leading-tight group-hover:text-primary transition-colors",
+            wordmarkClassName
+          )}
+        >
+          CLINICALLY EVOLVE
         </span>
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mt-0.5">
-          NGO Operations
-        </span>
+        {showSubtitle && (
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mt-0.5">
+            Credential Portal
+          </span>
+        )}
       </div>
     </div>
   )

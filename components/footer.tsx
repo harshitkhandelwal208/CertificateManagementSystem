@@ -8,8 +8,8 @@ export function Footer() {
     <footer className="mt-auto border-t border-border/60 bg-card/30 py-6 text-xs text-muted-foreground">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 sm:flex-row">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="size-4 text-primary" />
-          <span>Certificate Operations Platform &bull; NGO Administrative Console &bull; &copy; {currentYear}</span>
+          <img src="/logo.png" alt="Clinically Evolve" className="size-4 object-contain rounded-xs bg-white/10" />
+          <span>Clinically Evolve &bull; Credential Operations Platform &bull; &copy; {currentYear}</span>
         </div>
         <div className="flex items-center gap-4">
           <a

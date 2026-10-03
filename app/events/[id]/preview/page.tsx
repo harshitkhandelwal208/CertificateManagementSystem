@@ -1,20 +1,33 @@
 "use client"
 
 import Link from "next/link"
-import { Suspense } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useParams, useSearchParams } from "next/navigation"
 import { ArrowLeft, ArrowRight, QrCode, ShieldCheck, PenLine } from "lucide-react"
 import { AppShell } from "@/components/dashboard/app-shell"
 import { Stepper } from "@/components/dashboard/stepper"
 import { Button } from "@/components/ui/button"
 import { CertificatePreview } from "@/components/certificate-preview"
+import { CustomPdfPreview, useCustomPdfTemplate } from "@/components/template/custom-pdf-preview"
 import { credentialTemplates } from "@/lib/templates"
 
 function PreviewContent() {
   const params = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const templateId = searchParams.get("template") ?? credentialTemplates[0].id
+  const showCustomPreview = searchParams.get("custom") === "1"
   const template = credentialTemplates.find((t) => t.id === templateId) ?? credentialTemplates[0]
+  const customTemplate = useCustomPdfTemplate(`event:${params.id}`)
+  const [eventName, setEventName] = useState(params.id)
+
+  useEffect(() => {
+    fetch(`/api/events/${encodeURIComponent(params.id)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.eventName) setEventName(data.eventName)
+      })
+      .catch(() => {})
+  }, [params.id])
 
   return (
     <AppShell>
@@ -37,14 +50,18 @@ function PreviewContent() {
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_minmax(0,300px)]">
         <div className="mx-auto w-full max-w-xl">
-          <CertificatePreview
-            className="rise"
-            template={template}
-            recipientName="John Doe"
-            eventName="Your Event Name"
-            issueDate="Sep 20th, 2026"
-            credentialId="7b6c197e-d663-44e4-b455-1d0c864e1425"
-          />
+          {showCustomPreview && customTemplate.pdfUrl ? (
+            <CustomPdfPreview storageKey={`event:${params.id}`} className="rise" sampleName="John Doe" sampleEvent={eventName} />
+          ) : (
+            <CertificatePreview
+              className="rise"
+              template={template}
+              recipientName="John Doe"
+              eventName={eventName}
+              issueDate="Sep 20th, 2026"
+              credentialId="7b6c197e-d663-44e4-b455-1d0c864e1425"
+            />
+          )}
         </div>
 
         <div className="flex flex-col gap-4">
@@ -83,7 +100,7 @@ function PreviewContent() {
         <Button variant="outline" render={<Link href={`/events/${params.id}/template`} />}>
           Back
         </Button>
-        <Button render={<Link href={`/events/${params.id}/issue?template=${templateId}`} />}>
+        <Button render={<Link href={`/events/${params.id}/issue?template=${templateId}&custom=${showCustomPreview ? "1" : "0"}&customKey=event:${params.id}&name=${encodeURIComponent(eventName)}`} />}>
           Looks good, continue
           <ArrowRight data-icon="inline-end" />
         </Button>

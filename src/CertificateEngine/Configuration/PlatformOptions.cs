@@ -19,11 +19,11 @@ public sealed class PlatformOptions
 public sealed class EventSourceOptions
 {
     public string EventId { get; init; } = string.Empty;
-    public string EventName { get; init; } = string.Empty;
+    public string EventName { get; set; } = string.Empty;
     public string SpreadsheetId { get; init; } = string.Empty;
     public string SheetName { get; init; } = "Form Responses 1";
     public string Range { get; init; } = "A:ZZ";
-    public string TemplateId { get; init; } = "default";
+    public string TemplateId { get; set; } = "default";
 
     public string SourceIdColumn { get; init; } = "Timestamp";
     public string NameColumn { get; init; } = "Full Name";

@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process"
 import path from "node:path"
 
+import type { TemplateLayoutConfig } from "@/lib/template-layout"
+
 const dllPath = path.resolve(process.cwd(), "src/CertificateEngine/bin/Debug/net8.0/CertificateEngine.dll")
 
 export interface SingleIssueParams {
@@ -9,6 +11,8 @@ export interface SingleIssueParams {
   eventName?: string
   email?: string
   phone?: string
+  templateId?: string
+  layout?: TemplateLayoutConfig
 }
 
 export interface SingleIssueResult {
@@ -30,6 +34,7 @@ export interface BatchIssueParams {
   eventName?: string
   templateId?: string
   recipients: BatchRecipient[]
+  layout?: TemplateLayoutConfig
 }
 
 export interface BatchIssueResult {

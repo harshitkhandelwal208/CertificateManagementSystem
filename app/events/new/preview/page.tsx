@@ -8,13 +8,16 @@ import { AppShell } from "@/components/dashboard/app-shell"
 import { Stepper } from "@/components/dashboard/stepper"
 import { Button } from "@/components/ui/button"
 import { CertificatePreview } from "@/components/certificate-preview"
+import { CustomPdfPreview, useCustomPdfTemplate } from "@/components/template/custom-pdf-preview"
 import { credentialTemplates } from "@/lib/templates"
 import { loadDraft } from "@/app/events/new/page"
 
 function PreviewContent() {
   const searchParams = useSearchParams()
   const templateId = searchParams.get("template") ?? credentialTemplates[0].id
+  const showCustomPreview = searchParams.get("custom") === "1"
   const template = credentialTemplates.find((t) => t.id === templateId) ?? credentialTemplates[0]
+  const customTemplate = useCustomPdfTemplate("new-event")
   const draft = loadDraft()
   const eventName = draft?.name ?? "Your Event Name"
   const eventSlug = eventName
@@ -44,14 +47,18 @@ function PreviewContent() {
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_minmax(0,300px)]">
         <div className="mx-auto w-full max-w-xl">
-          <CertificatePreview
-            className="rise"
-            template={template}
-            recipientName="Sample Recipient"
-            eventName={eventName}
-            issueDate={new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-            credentialId="SAMPLE-CERT-2026"
-          />
+          {showCustomPreview && customTemplate.pdfUrl ? (
+            <CustomPdfPreview storageKey="new-event" className="rise" sampleName="Sample Recipient" sampleEvent={eventName} />
+          ) : (
+            <CertificatePreview
+              className="rise"
+              template={template}
+              recipientName="Sample Recipient"
+              eventName={eventName}
+              issueDate={new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+              credentialId="SAMPLE-CERT-2026"
+            />
+          )}
         </div>
 
         <div className="flex flex-col gap-4">
@@ -90,7 +97,7 @@ function PreviewContent() {
         <Button variant="outline" render={<Link href={`/events/new/template`} />}>
           Back
         </Button>
-        <Button render={<Link href={`/events/${eventSlug}/issue?template=${templateId}`} />}>
+        <Button render={<Link href={`/events/${eventSlug}/issue?template=${templateId}&custom=${showCustomPreview ? "1" : "0"}&customKey=new-event&name=${encodeURIComponent(eventName)}`} />}>
           Looks good, continue
           <ArrowRight data-icon="inline-end" />
         </Button>

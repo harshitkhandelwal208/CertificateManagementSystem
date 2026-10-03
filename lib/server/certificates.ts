@@ -86,13 +86,13 @@ export function getEventSummaries(): EventSummaryDto[] {
   const db = getDb()
   const rows = db.prepare(`
     SELECT event_id,
-           event_name,
-           template_id,
+           COALESCE(NULLIF(MAX(event_name), ''), event_id) as event_name,
+           COALESCE(NULLIF(MAX(template_id), ''), 'default') as template_id,
            COUNT(*) as total_count,
            SUM(CASE WHEN status = 'Issued' THEN 1 ELSE 0 END) as issued_count,
            MIN(created_at) as earliest_created_at
     FROM certificates
-    GROUP BY event_id, event_name, template_id
+    GROUP BY event_id
     ORDER BY MIN(created_at) DESC
   `).all() as Array<{
     event_id: string

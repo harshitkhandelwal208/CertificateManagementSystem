@@ -24,17 +24,25 @@ const fontMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'NGO Certificate Operations — Admin Console',
+  title: 'Clinically Evolve — Credential Management System',
   description:
-    'Administrative portal for issuing, tracking, and managing verified credentials for your NGO programs and cohorts.',
+    'Administrative portal for issuing, tracking, and verifying credentials for Clinically Evolve programs and cohorts.',
   icons: {
     icon: [
       {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      }
+        url: '/icon.png',
+        type: 'image/png',
+      },
+      {
+        url: '/favicon.ico',
+      },
+      {
+        url: '/logo.png',
+        type: 'image/png',
+      },
     ],
-    apple: '/icon.svg',
+    apple: '/logo.png',
+    shortcut: '/favicon.ico',
   },
 }
 

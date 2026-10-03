@@ -38,7 +38,7 @@ export interface EventDetail {
   earliestCreatedAt: string | null;
   issuedCount: number;
   totalCount: number;
-  certificates: PaginatedResult<CertificateSummary>;
+  certificates: CertificateSummary[];
 }
 
 // Verification response from CertificateVerification.Web
@@ -48,6 +48,7 @@ export interface VerificationResult {
   certificateNumber: string;
   participantName: string;
   eventName: string;
+  templateId?: string;
   issuedAtUtc: string | null;
   revokedAtUtc: string | null;
   revocationReason: string | null;

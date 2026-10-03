@@ -7,6 +7,7 @@
     <PackageVersion Include="MailKit" Version="4.17.0" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.29" />
     <PackageVersion Include="PDFsharp" Version="6.2.4" />
+    <PackageVersion Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
     <PackageVersion Include="QRCoder" Version="1.8.0" />
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="8.0.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { CertificatePreview } from "@/components/certificate-preview"
 import { CertStage } from "@/components/credential/cert-stage"
 import { PdfUploadZone } from "@/components/template/pdf-upload-zone"
+import { CustomPdfPreview, useCustomPdfTemplate } from "@/components/template/custom-pdf-preview"
 import { credentialTemplates } from "@/lib/templates"
 import { cn } from "@/lib/utils"
 
@@ -20,24 +21,18 @@ export default function SelectTemplatePage() {
   const [selected, setSelected] = useState(credentialTemplates[0].id)
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [showCustomPreview, setShowCustomPreview] = useState(false)
+  const customTemplate = useCustomPdfTemplate(`event:${params.id}`)
 
   const activeTemplate = credentialTemplates.find((t) => t.id === selected) ?? credentialTemplates[0]
 
   const handlePdfUpload = async (file: File) => {
     setUploading(true)
     try {
-      // In production, you would send to API:
-      // const formData = new FormData()
-      // formData.append('file', file)
-      // const response = await fetch('/api/templates/upload', {
-      //   method: 'POST',
-      //   body: formData
-      // })
-      // const data = await response.json()
-
-      // For now, show success message
+      await customTemplate.saveFile(file)
+      setShowCustomPreview(true)
       toast.success("PDF Template Ready", {
-        description: `${file.name} is ready to use. Template configuration coming next.`,
+        description: `${file.name} will be used for the preview and issued certificates.`,
       })
       setShowUploadModal(false)
     } catch (error) {
@@ -76,7 +71,10 @@ export default function SelectTemplatePage() {
             <button
               key={template.id}
               type="button"
-              onClick={() => setSelected(template.id)}
+              onClick={() => {
+                setSelected(template.id)
+                setShowCustomPreview(false)
+              }}
               className={cn(
                 "flex items-center gap-3 rounded-xl border p-4 text-left transition-all",
                 selected === template.id
@@ -127,7 +125,7 @@ export default function SelectTemplatePage() {
             <div className="rounded-xl border border-border bg-card p-4">
               <PdfUploadZone onFileAccepted={handlePdfUpload} disabled={uploading} />
               <p className="mt-3 text-xs text-muted-foreground">
-                📋 After upload, you'll configure where text appears on your PDF
+                Sample recipient data will appear in the confirmation preview and on issued certificates.
               </p>
             </div>
           )}
@@ -136,15 +134,19 @@ export default function SelectTemplatePage() {
         <div className="lg:sticky lg:top-24 lg:self-start">
           <p className="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Live preview</p>
           <CertStage>
-            <CertificatePreview
-              key={activeTemplate.id}
-              className="rise"
-              template={activeTemplate}
-              recipientName="Jordan Ellery"
-              eventName="Your Event Name"
-              issueDate="Sep 20th, 2026"
-              credentialId="preview-mode"
-            />
+            {showCustomPreview && customTemplate.pdfUrl ? (
+              <CustomPdfPreview storageKey={`event:${params.id}`} className="rise" />
+            ) : (
+              <CertificatePreview
+                key={activeTemplate.id}
+                className="rise"
+                template={activeTemplate}
+                recipientName="Jordan Ellery"
+                eventName="Your Event Name"
+                issueDate="Sep 20th, 2026"
+                credentialId="preview-mode"
+              />
+            )}
           </CertStage>
         </div>
       </div>
@@ -153,7 +155,7 @@ export default function SelectTemplatePage() {
         <Button variant="outline" render={<Link href="/events" />}>
           Cancel
         </Button>
-        <Button render={<Link href={`/events/${params.id}/preview?template=${selected}`} />}>
+        <Button render={<Link href={`/events/${params.id}/preview?template=${selected}&custom=${showCustomPreview ? "1" : "0"}`} />}>
           Continue
           <ArrowRight data-icon="inline-end" />
         </Button>
