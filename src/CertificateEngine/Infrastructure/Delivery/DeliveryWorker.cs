@@ -24,22 +24,26 @@ public sealed class DeliveryWorker : BackgroundService
             "Email fallback could not be queued for certificate {CertificateId}.");
 
     private readonly CertificateRepository _repository;
+    private readonly CertificateDatabase _database;
     private readonly ReadOnlyDictionary<DeliveryChannel, IDeliveryChannel> _channels;
     private readonly IOptions<PlatformOptions> _platformOptions;
     private readonly ILogger<DeliveryWorker> _logger;
 
     public DeliveryWorker(
         CertificateRepository repository,
+        CertificateDatabase database,
         IEnumerable<IDeliveryChannel> channels,
         IOptions<PlatformOptions> platformOptions,
         ILogger<DeliveryWorker> logger)
     {
         ArgumentNullException.ThrowIfNull(repository);
+        ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(platformOptions);
         ArgumentNullException.ThrowIfNull(logger);
 
         _repository = repository;
+        _database = database;
         _channels = new ReadOnlyDictionary<DeliveryChannel, IDeliveryChannel>(
             channels.ToDictionary(channel => channel.Channel));
         _platformOptions = platformOptions;
@@ -170,7 +174,7 @@ public sealed class DeliveryWorker : BackgroundService
         try
         {
             var artifactPath = ResolveArtifactPath(
-                platformOptions.DataDirectory,
+                _database.DataDirectory,
                 certificate.ArtifactPath);
             await using var artifact = new FileStream(
                 artifactPath,

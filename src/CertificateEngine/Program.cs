@@ -13,7 +13,8 @@ using System.Net;
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration
     .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: true)
-    .AddJsonFile(Path.Combine(Directory.GetCurrentDirectory(), "src/CertificateEngine/appsettings.json"), optional: true);
+    .AddJsonFile(Path.Combine(Directory.GetCurrentDirectory(), "src/CertificateEngine/appsettings.json"), optional: true)
+    .AddEnvironmentVariables();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
