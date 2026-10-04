@@ -17,7 +17,8 @@ builder.Services.AddSingleton<CertificateLookup>();
 var app = builder.Build();
 app.UseCors();
 
-app.MapGet("/favicon.ico", () => Results.Redirect("http://localhost:3000/favicon.ico"));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "CertificateVerification.Web" }));
+app.MapGet("/favicon.ico", () => Results.NoContent());
 app.MapGet("/", () => Results.Redirect("http://localhost:3000/verify"));
 app.MapGet("/verify/{publicId}", (string publicId) => Results.Redirect($"http://localhost:3000/verify/{Uri.EscapeDataString(publicId)}"));
 app.MapGet("/api/verify/{publicId}", async (string publicId, CertificateLookup lookup, CancellationToken ct) =>

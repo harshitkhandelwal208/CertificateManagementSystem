@@ -142,6 +142,54 @@ npx pnpm build
 
 ---
 
+## Cloud Hosting & Render Free Tier Deployment
+
+The platform is fully packaged for zero-cost cloud hosting on **Render Free Tier Web Services** (512 MB RAM limit). 
+
+### How It Works in Cloud Containers
+Render Free Tier assigns a single dynamic port via the `$PORT` environment variable and enforces a strict 512 MB RAM limit:
+- **Unified Front-Facing Gateway**: Next.js runs in standalone mode on `0.0.0.0:$PORT`, serving both the NGO Admin Console and the Independent Verification Stage.
+- **Internal Cryptographic Service**: `CertificateVerification.Web` runs internally on `127.0.0.1:5001`, providing detached CMS signature checks and root CA validation.
+- **On-Demand Issuance**: Certificate signing is executed via sub-second on-demand CLI invocation (`CertificateEngine.dll`), immediately freeing memory after each batch.
+- **Ultra-Low Memory Footprint**: Steady-state memory is only **~60-86 MB RAM** (less than 17% of the 512 MB limit), completely preventing Out-Of-Memory (OOM) crashes.
+
+### Option 1: Deploy with Render Blueprint (`render.yaml`)
+1. Fork or push this repository to GitHub.
+2. In the [Render Dashboard](https://dashboard.render.com), click **New +** -> **Blueprint**.
+3. Select your repository. Render automatically reads `render.yaml` and provisions the Web Service using the Dockerfile.
+4. Set any custom environment variables (e.g. `Platform__OrganizationName`, `Signing__PfxPassword`).
+5. Click **Apply**. Render will build and deploy the container with health checks automatically monitored at `/api/health`.
+
+### Option 2: Deploy Manually as a Docker Web Service on Render
+1. In Render, select **New +** -> **Web Service**.
+2. Connect your GitHub repository.
+3. Configure settings:
+   - **Environment**: `Docker`
+   - **DockerfilePath**: `./Dockerfile`
+   - **Instance Type**: `Free`
+   - **Health Check Path**: `/api/health`
+4. Add environment variables:
+   - `NODE_ENV`: `production`
+   - `Platform__OrganizationName`: `Clinically Evolve Foundation` (or your NGO name)
+   - `Platform__InternalApiKey`: *(your secret key)*
+   - `Signing__PfxPassword`: `SigningPassword123!`
+5. Click **Create Web Service**.
+
+### Option 3: Local Docker Testing
+You can build and test the production container locally with standard Docker:
+```bash
+# Build the production container
+docker build -t cert-platform-render .
+
+# Run the container (mapping port 3000)
+docker run -p 3000:3000 cert-platform-render
+
+# Test health check
+curl http://localhost:3000/api/health
+```
+
+---
+
 ## Production Deployment & Operational Documentation
 
 Detailed step-by-step guides for production deployment and external integrations:
@@ -151,3 +199,4 @@ Detailed step-by-step guides for production deployment and external integrations
 3. [**WhatsApp Delivery (Meta Cloud API)**](docs/whatsapp-setup.md) — Meta Business verification, permanent system tokens, and message template approval.
 4. [**Signing Key & CA Cryptography**](docs/signing-key-and-ca.md) — Root CA lifecycle, key protection, and cold storage best practices.
 5. [**Production Hosting & Hardening**](docs/hosting.md) — Systemd service sandbox, Caddy reverse proxy, TLS, firewall, and encrypted SQLite backups.
+

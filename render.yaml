@@ -1,16 +1,23 @@
 services:
   - type: web
-    name: certificate-engine
+    name: certificate-platform
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
     region: singapore
+    healthCheckPath: /api/health
     envVars:
+      - key: NODE_ENV
+        value: production
       - key: Platform__OrganizationName
         value: Clinically Evolve Foundation
       - key: Platform__InternalApiKey
         value: local-testing-key-change-before-production-2026
-      - key: Platform__PublicBaseUrl
-        value: https://your-app.vercel.app
       - key: Signing__PfxPassword
         value: SigningPassword123!
+      - key: DATA_DIR
+        value: /app/data
+      - key: ENGINE_DLL_PATH
+        value: /app/engine/CertificateEngine.dll
+      - key: VERIFICATION_URL
+        value: http://127.0.0.1:5001

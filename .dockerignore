@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.github
+**/bin
+**/obj
+tests
+tools
+*.log
+data/certificates.db-wal
+data/certificates.db-shm
+.env.local
+secrets.env

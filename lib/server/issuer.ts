@@ -3,7 +3,33 @@ import path from "node:path"
 
 import type { TemplateLayoutConfig } from "@/lib/template-layout"
 
-const dllPath = path.resolve(process.cwd(), "src/CertificateEngine/bin/Debug/net8.0/CertificateEngine.dll")
+export function getDllPath(): string {
+  if (process.env.ENGINE_DLL_PATH && fs.existsSync(/*turbopackIgnore: true*/ process.env.ENGINE_DLL_PATH)) {
+    return process.env.ENGINE_DLL_PATH
+  }
+  const candidates = [
+    path.resolve("/app/engine/CertificateEngine.dll"),
+    path.resolve(process.cwd(), "engine/CertificateEngine.dll"),
+    path.resolve(process.cwd(), "src/CertificateEngine/bin/Release/net8.0/CertificateEngine.dll"),
+    path.resolve(process.cwd(), "src/CertificateEngine/bin/Debug/net8.0/CertificateEngine.dll"),
+  ]
+  for (const candidate of candidates) {
+    if (fs.existsSync(/*turbopackIgnore: true*/ candidate)) {
+      return candidate
+    }
+  }
+  return candidates[candidates.length - 1]
+}
+
+function getEngineCwd(): string {
+  if (process.env.ENGINE_CWD && fs.existsSync(/*turbopackIgnore: true*/ process.env.ENGINE_CWD)) {
+    return process.env.ENGINE_CWD
+  }
+  if (process.env.DATA_DIR && fs.existsSync(/*turbopackIgnore: true*/ process.env.DATA_DIR)) {
+    return path.dirname(path.resolve(process.env.DATA_DIR))
+  }
+  return process.cwd()
+}
 
 export interface SingleIssueParams {
   fullName: string
@@ -81,7 +107,8 @@ export function issueSingleCertificate(params: SingleIssueParams): Promise<Singl
           artifactSha256: "",
         } as SingleIssueResult
       } catch (err: any) {
-        if (!fs.existsSync(dllPath)) throw err
+        const fallbackDll = getDllPath()
+        if (!fs.existsSync(/*turbopackIgnore: true*/ fallbackDll)) throw err
         return executeSingleCli(params)
       }
     })()
@@ -92,8 +119,13 @@ export function issueSingleCertificate(params: SingleIssueParams): Promise<Singl
 
 function executeSingleCli(params: SingleIssueParams): Promise<SingleIssueResult> {
   return new Promise((resolve, reject) => {
+    const dllPath = getDllPath()
+    if (!fs.existsSync(/*turbopackIgnore: true*/ dllPath)) {
+      return reject(new Error(`CertificateEngine binary not found at ${dllPath}`))
+    }
+    const cwd = getEngineCwd()
     const payload = JSON.stringify(params)
-    execFile("dotnet", [dllPath, "issue", payload], (err, stdout, stderr) => {
+    execFile("dotnet", [dllPath, "issue", payload], { cwd, env: { ...process.env } }, (err, stdout, stderr) => {
       if (err) {
         return reject(new Error(stderr || err.message))
       }
@@ -141,7 +173,8 @@ export function issueBatchCertificates(params: BatchIssueParams): Promise<BatchI
           results,
         } as BatchIssueResult
       } catch (err: any) {
-        if (!fs.existsSync(dllPath)) throw err
+        const fallbackDll = getDllPath()
+        if (!fs.existsSync(/*turbopackIgnore: true*/ fallbackDll)) throw err
         return executeBatchCli(params)
       }
     })()
@@ -152,8 +185,13 @@ export function issueBatchCertificates(params: BatchIssueParams): Promise<BatchI
 
 function executeBatchCli(params: BatchIssueParams): Promise<BatchIssueResult> {
   return new Promise((resolve, reject) => {
+    const dllPath = getDllPath()
+    if (!fs.existsSync(/*turbopackIgnore: true*/ dllPath)) {
+      return reject(new Error(`CertificateEngine binary not found at ${dllPath}`))
+    }
+    const cwd = getEngineCwd()
     const payload = JSON.stringify(params)
-    execFile("dotnet", [dllPath, "issue-batch", payload], (err, stdout, stderr) => {
+    execFile("dotnet", [dllPath, "issue-batch", payload], { cwd, env: { ...process.env } }, (err, stdout, stderr) => {
       if (err) {
         return reject(new Error(stderr || err.message))
       }

@@ -246,7 +246,10 @@ export function getCertificateRecordByPublicId(publicId: string): CertificateRow
 export function getCertificatePdfPath(publicId: string): string | null {
   const row = getCertificateRecordByPublicId(publicId)
   if (!row || !row.artifact_path) return null
-  const fullPath = path.resolve(process.cwd(), "data", row.artifact_path)
+  const dataDir = process.env.DATA_DIR && fs.existsSync(process.env.DATA_DIR)
+    ? path.resolve(process.env.DATA_DIR)
+    : path.resolve(process.cwd(), "data")
+  const fullPath = path.resolve(dataDir, row.artifact_path)
   return fs.existsSync(fullPath) ? fullPath : null
 }
 

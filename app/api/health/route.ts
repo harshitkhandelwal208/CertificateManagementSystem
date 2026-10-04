@@ -11,10 +11,15 @@ export async function GET() {
 
     let verificationOnline = false;
     try {
-      const vRes = await fetch(`${getVerificationUrl()}/favicon.ico`, { cache: 'no-store' });
+      const vRes = await fetch(`${getVerificationUrl()}/health`, { cache: 'no-store' });
       verificationOnline = vRes.ok;
     } catch {
-      verificationOnline = false;
+      try {
+        const vRes = await fetch(`${getVerificationUrl()}/favicon.ico`, { cache: 'no-store' });
+        verificationOnline = vRes.ok;
+      } catch {
+        verificationOnline = false;
+      }
     }
 
     return NextResponse.json({

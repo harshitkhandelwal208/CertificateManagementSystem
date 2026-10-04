@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import fs from "node:fs/promises"
+import fsSync from "node:fs"
 import path from "node:path"
 
 import { normalizeTemplateId } from "@/lib/template-layout"
@@ -25,7 +26,10 @@ export async function POST(request: Request) {
     }
 
     const templateId = normalizeTemplateId(key)
-    const templatesDirectory = path.resolve(process.cwd(), "data", "templates")
+    const dataDir = process.env.DATA_DIR && fsSync.existsSync(process.env.DATA_DIR)
+      ? path.resolve(process.env.DATA_DIR)
+      : path.resolve(process.cwd(), "data")
+    const templatesDirectory = path.resolve(dataDir, "templates")
     await fs.mkdir(templatesDirectory, { recursive: true })
     await fs.writeFile(path.join(templatesDirectory, `${templateId}.pdf`), bytes)
 
