@@ -36,6 +36,12 @@ public sealed class CertificateArtifactService : IDisposable
             if (!_signingCertificate.HasPrivateKey)
                 throw new InvalidOperationException("Signing:PfxPath does not contain a private key.");
             _trustedRoot = X509Certificate2.CreateFromPem(File.ReadAllText(ResolvePath(_signing.TrustedRootPath)));
+            using var chain = new X509Chain();
+            chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            chain.ChainPolicy.CustomTrustStore.Add(_trustedRoot);
+            if (!chain.Build(_signingCertificate))
+                throw new InvalidOperationException("The signing certificate is expired or does not chain to the configured trusted root.");
         }
     }
 
@@ -44,6 +50,7 @@ public sealed class CertificateArtifactService : IDisposable
 
     public void ValidateTemplate(string templateId, TemplateLayoutDto? layout)
     {
+        _database.RestoreTemplate(templateId);
         var templatePath = ResolveCustomTemplatePath(templateId);
         var savedLayout = layout is null && templatePath is not null ? ResolveCustomTemplateLayout(templateId) : null;
         var family = layout?.FontFamily ?? savedLayout?.FontFamily ?? "Noto Sans";
@@ -62,6 +69,7 @@ public sealed class CertificateArtifactService : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         var bytes = Render(certificate, explicitLayout);
         await File.WriteAllBytesAsync(fullPath, bytes, cancellationToken);
+        await _database.StoreFileAsync(relative, bytes, cancellationToken);
         var hash = Convert.ToHexString(SHA256.HashData(bytes));
         var thumbprint = _signingCertificate?.Thumbprint ?? "UNSIGNED";
         if (_signingCertificate is not null)
@@ -73,7 +81,9 @@ public sealed class CertificateArtifactService : IDisposable
                 DigestAlgorithm = new Oid("2.16.840.1.101.3.4.2.1")
             };
             cms.ComputeSignature(signer, silent: true);
-            await File.WriteAllBytesAsync(fullPath + ".p7s", cms.Encode(), cancellationToken);
+            var signature = cms.Encode();
+            await File.WriteAllBytesAsync(fullPath + ".p7s", signature, cancellationToken);
+            await _database.StoreFileAsync(relative + ".p7s", signature, cancellationToken);
         }
         return (relative.Replace('\\', '/'), hash, thumbprint);
     }
@@ -81,13 +91,14 @@ public sealed class CertificateArtifactService : IDisposable
     public async Task<bool> VerifyAsync(CertificateRecord certificate, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(certificate.ArtifactPath) || string.IsNullOrWhiteSpace(certificate.ArtifactSha256)) return false;
-        var pdf = await File.ReadAllBytesAsync(ResolveArtifactPath(certificate.ArtifactPath), cancellationToken);
+        var pdf = await _database.ReadFileAsync(certificate.ArtifactPath, cancellationToken);
+        if (pdf is null) return false;
         if (!CryptographicOperations.FixedTimeEquals(Convert.FromHexString(certificate.ArtifactSha256), SHA256.HashData(pdf))) return false;
         if (_signingCertificate is null) return certificate.SignerThumbprint == "UNSIGNED";
-        var signaturePath = ResolveArtifactPath(certificate.ArtifactPath) + ".p7s";
-        if (!File.Exists(signaturePath)) return false;
+        var signature = await _database.ReadFileAsync(certificate.ArtifactPath + ".p7s", cancellationToken);
+        if (signature is null) return false;
         var cms = new SignedCms(new ContentInfo(pdf), detached: true);
-        cms.Decode(await File.ReadAllBytesAsync(signaturePath, cancellationToken));
+        cms.Decode(signature);
         cms.CheckSignature(verifySignatureOnly: true);
         var signer = cms.SignerInfos.Count == 1 ? cms.SignerInfos[0].Certificate : null;
         if (signer is null || !string.Equals(signer.Thumbprint, _signingCertificate.Thumbprint, StringComparison.OrdinalIgnoreCase)) return false;

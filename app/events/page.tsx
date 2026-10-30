@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import Link from "next/link"
 import { Plus, Users, CheckCircle2, FolderKanban } from "lucide-react"
 import { AppShell } from "@/components/dashboard/app-shell"
@@ -11,7 +12,7 @@ import { getEventSummaries } from "@/lib/server/certificates"
 
 async function fetchEvents(): Promise<EventSummary[]> {
   try {
-    return getEventSummaries()
+    return await getEventSummaries()
   } catch {
     return []
   }

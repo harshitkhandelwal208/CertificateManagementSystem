@@ -9,11 +9,9 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: Platform__OrganizationName
-        value: Clinically Evolve Foundation
-      - key: Platform__InternalApiKey
-        sync: false
-      - key: Signing__PfxPassword
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: DATABASE_URL
         sync: false
       - key: ADMIN_EMAIL
         sync: false
@@ -21,9 +19,15 @@ services:
         sync: false
       - key: SESSION_SECRET
         generateValue: true
+      - key: Platform__InternalApiKey
+        generateValue: true
+      - key: Platform__OrganizationName
+        value: Clinically Evolve Foundation
+      - key: Signing__PfxPassword
+        sync: false
+      - key: SIGNING_PFX_BASE64
+        sync: false
+      - key: TRUSTED_ROOT_PEM_BASE64
+        sync: false
       - key: DATA_DIR
         value: /app/data
-      - key: ENGINE_DLL_PATH
-        value: /app/engine/CertificateEngine.dll
-      - key: VERIFICATION_URL
-        value: http://127.0.0.1:5001

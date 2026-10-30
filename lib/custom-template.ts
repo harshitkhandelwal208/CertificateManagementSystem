@@ -42,7 +42,11 @@ export async function getCustomTemplate(key: string): Promise<StoredTemplate | n
     request.onerror = () => reject(request.error ?? new Error("Could not read PDF template"))
   })
   database.close()
-  return template
+  if (template) return template
+  const response = await fetch(`/api/templates/download?templateKey=${encodeURIComponent(key)}`)
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error('Could not fetch the certificate template')
+  return { key, name: 'Certificate template.pdf', blob: await response.blob() }
 }
 
 export async function deleteCustomTemplate(key: string) {

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
-import fs from "node:fs/promises"
-import fsSync from "node:fs"
-import path from "node:path"
+import { writeRuntimeFile } from "@/lib/server/files"
+import { apiError, stringField } from "@/lib/server/http"
 
 import { normalizeTemplateId } from "@/lib/template-layout"
 import { prepareTemplate } from "@/lib/prepare-template"
@@ -25,16 +24,11 @@ export async function POST(request: Request) {
     try { bytes = await prepareTemplate(new Uint8Array(await file.arrayBuffer()), file.name) }
     catch { return NextResponse.json({ error: "Upload a valid PDF, PNG, JPG, or JPEG file." }, { status: 400 }) }
 
-    const templateId = normalizeTemplateId(key)
-    const dataDir = process.env.DATA_DIR && fsSync.existsSync(process.env.DATA_DIR)
-      ? path.resolve(process.env.DATA_DIR)
-      : path.resolve(process.cwd(), "data")
-    const templatesDirectory = path.resolve(dataDir, "templates")
-    await fs.mkdir(templatesDirectory, { recursive: true })
-    await fs.writeFile(path.join(templatesDirectory, `${templateId}.pdf`), bytes)
+    const templateId = normalizeTemplateId(stringField(key, 'template key', 180))
+    await writeRuntimeFile(`templates/${templateId}.pdf`, bytes)
 
     return NextResponse.json({ templateId, fileName: file.name })
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not save certificate template." }, { status: 500 })
+    return apiError(error)
   }
 }

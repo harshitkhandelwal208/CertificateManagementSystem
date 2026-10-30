@@ -8,6 +8,7 @@
     <PackageReference Include="Google.Apis.Sheets.v4" />
     <PackageReference Include="MailKit" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Npgsql" />
     <PackageReference Include="PDFsharp" />
     <PackageReference Include="UglyToad.PdfPig" />
     <PackageReference Include="QRCoder" />
@@ -17,5 +18,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Assets/Fonts/*.ttf" />
     <Content Include="Assets/Fonts/OFL.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/DatabaseProvider.cs" Link="Persistence/DatabaseProvider.cs" />
   </ItemGroup>
 </Project>

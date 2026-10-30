@@ -1,40 +1,32 @@
-import { DatabaseSync } from "node:sqlite"
-import path from "node:path"
-import fs from "node:fs"
+import { Pool, type PoolClient, type QueryResultRow } from 'pg'
 
-function getDataDirectory(): string {
-  if (process.env.DATA_DIR && fs.existsSync(process.env.DATA_DIR)) {
-    return path.resolve(process.env.DATA_DIR)
+let pool: Pool | undefined
+export function getDb(): Pool {
+  if (!pool) {
+    const connectionString = process.env.DATABASE_URL
+    if (!connectionString) throw new Error('DATABASE_URL is required')
+    const url = new URL(connectionString)
+    const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(url.hostname)
+    // Keep certificate validation enabled even when the Neon URL uses sslmode=require.
+    url.searchParams.delete('sslmode')
+    url.searchParams.delete('channel_binding')
+    pool = new Pool({ connectionString: url.toString(), ssl: local ? false : { rejectUnauthorized: true }, max: 3, connectionTimeoutMillis: 15000, idleTimeoutMillis: 30000, query_timeout: 30000 })
+    pool.on('error', () => console.error('Idle database connection failed'))
   }
-  return path.resolve(process.cwd(), "data")
+  return pool
 }
-
-function getDatabasePath(): string {
-  if (process.env.DB_PATH) {
-    return path.resolve(process.env.DB_PATH)
-  }
-  return path.join(getDataDirectory(), "certificates.db")
+export async function query<T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []): Promise<T[]> {
+  return (await getDb().query<T>(sql, values)).rows
 }
-
-let dbInstance: DatabaseSync | null = null
-
-export function getDb(): DatabaseSync {
-  if (!dbInstance) {
-    const dbPath = getDatabasePath()
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true })
-    dbInstance = new DatabaseSync(dbPath)
-    dbInstance.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = NORMAL;
-      PRAGMA foreign_keys = ON;
-      PRAGMA busy_timeout = 10000;
-      CREATE TABLE IF NOT EXISTS events (
-        event_id TEXT PRIMARY KEY COLLATE NOCASE,
-        event_name TEXT NOT NULL,
-        template_id TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
-    `)
-  }
-  return dbInstance
+export async function transaction<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await getDb().connect()
+  try {
+    await client.query('BEGIN')
+    const result = await operation(client)
+    await client.query('COMMIT')
+    return result
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally { client.release() }
 }

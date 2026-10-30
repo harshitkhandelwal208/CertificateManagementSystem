@@ -1,7 +1,5 @@
 import crypto from "node:crypto"
-import path from "node:path"
-import fs from "node:fs"
-import { getDb } from "./db"
+import { query, transaction } from "./db"
 
 export interface CertificateRow {
   id: number
@@ -82,220 +80,74 @@ function toSummaryDto(row: CertificateRow): CertificateSummaryDto {
   }
 }
 
-export function getEventSummaries(): EventSummaryDto[] {
-  const db = getDb()
-  const rows = db.prepare(`
+export async function getEventSummaries(): Promise<EventSummaryDto[]> {
+  const rows = await query(`
     WITH all_events AS (
       SELECT event_id, event_name, template_id, created_at FROM events
       UNION ALL
       SELECT event_id, MAX(event_name), MAX(template_id), MIN(created_at)
-      FROM certificates c WHERE NOT EXISTS (SELECT 1 FROM events e WHERE e.event_id = c.event_id COLLATE NOCASE)
-      GROUP BY event_id COLLATE NOCASE
+      FROM certificates c WHERE NOT EXISTS (SELECT 1 FROM events e WHERE lower(e.event_id) = lower(c.event_id))
+      GROUP BY event_id
     )
-    SELECT e.event_id, e.event_name, e.template_id, e.created_at as earliest_created_at,
-           COUNT(c.id) as total_count,
-           SUM(CASE WHEN c.status = 'Issued' THEN 1 ELSE 0 END) as issued_count
-    FROM all_events e LEFT JOIN certificates c ON c.event_id = e.event_id COLLATE NOCASE
-    GROUP BY e.event_id COLLATE NOCASE
-    ORDER BY e.created_at DESC
-  `).all() as Array<{
-    event_id: string
-    event_name: string
-    template_id: string
-    total_count: number
-    issued_count: number
-    earliest_created_at: string | null
-  }>
-
-  return rows.map((r) => ({
-    eventId: r.event_id,
-    eventName: r.event_name,
-    templateId: r.template_id || "default",
-    earliestCreatedAt: r.earliest_created_at ?? null,
-    issuedCount: Number(r.issued_count || 0),
-    totalCount: Number(r.total_count || 0),
-  }))
+    SELECT e.event_id, e.event_name, e.template_id, e.created_at AS earliest_created_at,
+           COUNT(c.id) AS total_count, SUM(CASE WHEN c.status = 'Issued' THEN 1 ELSE 0 END) AS issued_count
+    FROM all_events e LEFT JOIN certificates c ON lower(c.event_id) = lower(e.event_id)
+    GROUP BY e.event_id, e.event_name, e.template_id, e.created_at
+    ORDER BY e.created_at DESC`)
+  return rows.map(r => ({ eventId: r.event_id, eventName: r.event_name, templateId: r.template_id,
+    earliestCreatedAt: r.earliest_created_at, totalCount: Number(r.total_count), issuedCount: Number(r.issued_count) }))
 }
 
-export function getEventDetail(
-  eventId: string,
-  page: number = 1,
-  pageSize: number = 50
-): {
-  eventId: string
-  eventName: string
-  templateId: string
-  totalCount: number
-  issuedCount: number
-  earliestCreatedAt: string | null
-  certificates: CertificateSummaryDto[]
-} | null {
-  const db = getDb()
-  const summaryRow = getEventSummaries().find((event) => event.eventId.toLowerCase() === eventId.toLowerCase())
-  if (!summaryRow) return null
-
-  const p = Math.max(1, page)
-  const ps = Math.min(200, Math.max(1, pageSize))
-  const offset = (p - 1) * ps
-
-  const certRows = db.prepare(`
-    SELECT * FROM certificates
-    WHERE lower(event_id) = lower(?)
-    ORDER BY created_at DESC
-    LIMIT ? OFFSET ?
-  `).all(eventId, ps, offset) as unknown as CertificateRow[]
-
-  return {
-    eventId: summaryRow.eventId,
-    eventName: summaryRow.eventName,
-    templateId: summaryRow.templateId,
-    totalCount: summaryRow.totalCount,
-    issuedCount: summaryRow.issuedCount,
-    earliestCreatedAt: summaryRow.earliestCreatedAt,
-    certificates: certRows.map(toSummaryDto),
-  }
+export async function getEventDetail(eventId: string, page = 1, pageSize = 50) {
+  const summary = (await getEventSummaries()).find(e => e.eventId.toLowerCase() === eventId.toLowerCase())
+  if (!summary) return null
+  const rows = await query<CertificateRow>('SELECT * FROM certificates WHERE lower(event_id) = lower($1) ORDER BY created_at DESC LIMIT $2 OFFSET $3', [eventId, pageSize, (page - 1) * pageSize])
+  return { ...summary, certificates: rows.map(toSummaryDto) }
 }
 
-export function getCertificatesPaginated(params: {
-  page?: number
-  pageSize?: number
-  eventId?: string | null
-  status?: string | null
-  search?: string | null
-}): PaginatedResult<CertificateSummaryDto> {
-  const db = getDb()
-  const page = Math.max(1, params.page || 1)
-  const pageSize = Math.min(200, Math.max(1, params.pageSize || 50))
-  const offset = (page - 1) * pageSize
-
+export async function getCertificatesPaginated(params: { page?: number; pageSize?: number; eventId?: string | null; status?: string | null; search?: string | null }): Promise<PaginatedResult<CertificateSummaryDto>> {
+  const page = params.page || 1
+  const pageSize = params.pageSize || 50
   const conditions: string[] = []
-  const values: any[] = []
-
-  if (params.eventId && params.eventId.trim().length > 0) {
-    conditions.push("lower(event_id) = lower(?)")
-    values.push(params.eventId.trim())
+  const values: unknown[] = []
+  for (const field of ['eventId', 'status'] as const) {
+    if (params[field]) { values.push(params[field]); conditions.push(`lower(${field === 'eventId' ? 'event_id' : 'status'}) = lower($${values.length})`) }
   }
-
-  if (params.status && params.status.trim().length > 0) {
-    conditions.push("lower(status) = lower(?)")
-    values.push(params.status.trim())
+  if (params.search) {
+    values.push(`%${params.search}%`)
+    conditions.push(`(participant_name ILIKE $${values.length} OR certificate_number ILIKE $${values.length} OR public_id ILIKE $${values.length} OR event_name ILIKE $${values.length} OR participant_email ILIKE $${values.length})`)
   }
-
-  if (params.search && params.search.trim().length > 0) {
-    const s = `%${params.search.trim()}%`
-    conditions.push(`(
-      participant_name LIKE ? OR
-      certificate_number LIKE ? OR
-      public_id LIKE ? OR
-      event_name LIKE ? OR
-      participant_email LIKE ?
-    )`)
-    values.push(s, s, s, s, s)
-  }
-
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
-
-  const countRow = db.prepare(`SELECT COUNT(*) as cnt FROM certificates ${whereClause}`).get(...values) as { cnt: number }
-  const totalCount = Number(countRow?.cnt || 0)
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
-
-  const query = `
-    SELECT * FROM certificates
-    ${whereClause}
-    ORDER BY created_at DESC
-    LIMIT ? OFFSET ?
-  `
-  const rows = db.prepare(query).all(...values, pageSize, offset) as unknown as CertificateRow[]
-
-  return {
-    items: rows.map(toSummaryDto),
-    totalCount,
-    page,
-    pageSize,
-    totalPages,
-  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const [count] = await query(`SELECT COUNT(*) AS count FROM certificates ${where}`, values)
+  const rows = await query<CertificateRow>(`SELECT * FROM certificates ${where} ORDER BY created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, [...values, pageSize, (page - 1) * pageSize])
+  return { items: rows.map(toSummaryDto), totalCount: Number(count.count), totalPages: Math.max(1, Math.ceil(Number(count.count) / pageSize)), page, pageSize }
 }
 
-export function getCertificateByPublicId(publicId: string): CertificateSummaryDto | null {
-  const db = getDb()
-  const row = db.prepare("SELECT * FROM certificates WHERE lower(public_id) = lower(?) LIMIT 1").get(publicId.trim()) as unknown as CertificateRow | undefined
-  return row ? toSummaryDto(row) : null
-}
-
-export function getCertificateRecordByPublicId(publicId: string): CertificateRow | null {
-  const db = getDb()
-  const row = db.prepare("SELECT * FROM certificates WHERE lower(public_id) = lower(?) LIMIT 1").get(publicId.trim()) as unknown as CertificateRow | undefined
+export async function getCertificateRecordByPublicId(publicId: string): Promise<CertificateRow | null> {
+  if (!/^[a-f0-9]{32}$/i.test(publicId)) return null
+  const [row] = await query<CertificateRow>('SELECT * FROM certificates WHERE public_id = $1 LIMIT 1', [publicId.toLowerCase()])
   return row ?? null
 }
-
-export function getCertificatePdfPath(publicId: string): string | null {
-  const row = getCertificateRecordByPublicId(publicId)
-  if (!row || !row.artifact_path) return null
-  const dataDir = process.env.DATA_DIR && fs.existsSync(process.env.DATA_DIR)
-    ? path.resolve(process.env.DATA_DIR)
-    : path.resolve(process.cwd(), "data")
-  const fullPath = path.resolve(dataDir, row.artifact_path)
-  return fs.existsSync(fullPath) ? fullPath : null
+export async function getCertificateByPublicId(publicId: string): Promise<CertificateSummaryDto | null> {
+  const row = await getCertificateRecordByPublicId(publicId)
+  return row ? toSummaryDto(row) : null
 }
-
-function prefix(s: string): string {
-  return `${Buffer.byteLength(s, "utf8")}:${s}`
-}
-
-export function appendAuditEvent(eventType: string, entityId: string, payload: Record<string, string | null>): void {
-  const db = getDb()
-  const head = db.prepare("SELECT sequence, event_hash FROM audit_events ORDER BY sequence DESC LIMIT 1").get() as { sequence: number; event_hash: string } | undefined
-
-  const sequence = (head?.sequence || 0) + 1
-  const previousHash = head?.event_hash || "GENESIS"
-  const now = new Date()
-  // Format C# UtcDateTime 'O' string: e.g. 2026-10-02T07:30:35.7863617Z (or millisecond standard ISO)
-  const occurredAt = now.toISOString()
-
-  // Canonical payload with sorted keys
-  const sortedKeys = Object.keys(payload).sort()
-  const sortedObj: Record<string, string | null> = {}
-  for (const k of sortedKeys) {
-    sortedObj[k] = payload[k]
-  }
-  const canonicalPayload = JSON.stringify(sortedObj)
-
-  const canonical = [
-    "audit-v1",
-    sequence.toString(),
-    previousHash,
-    occurredAt,
-    prefix(eventType),
-    prefix(entityId),
-    prefix(canonicalPayload),
-  ].join("\n")
-
-  const eventHash = crypto.createHash("sha256").update(canonical, "utf8").digest("hex").toUpperCase()
-
-  db.prepare(`
-    INSERT INTO audit_events (sequence, previous_hash, event_hash, occurred_at, event_type, entity_id, payload)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(sequence, previousHash, eventHash, occurredAt, eventType, entityId, canonicalPayload)
-}
-
-export function revokeCertificate(publicId: string, reason: string): boolean {
-  const db = getDb()
-  const cert = getCertificateRecordByPublicId(publicId)
-  if (!cert) return false
-  if (cert.status === "Revoked") return true
-
-  const now = new Date().toISOString()
-  db.prepare(`
-    UPDATE certificates
-    SET status = 'Revoked',
-        revoked_at = ?,
-        revocation_reason = ?
-    WHERE id = ?
-  `).run(now, reason.trim(), cert.id)
-
-  appendAuditEvent("certificate.revoked", cert.public_id, {
-    reason: reason.trim(),
+function prefix(s: string) { return `${Buffer.byteLength(s, 'utf8')}:${s}` }
+export async function revokeCertificate(publicId: string, reason: string): Promise<boolean> {
+  return transaction(async client => {
+    await client.query('SELECT pg_advisory_xact_lock(73421001)')
+    const { rows: [cert] } = await client.query('SELECT * FROM certificates WHERE public_id = $1 FOR UPDATE', [publicId])
+    if (!cert) return false
+    if (cert.status === 'Revoked') return true
+    const occurredAt = new Date().toISOString()
+    await client.query("UPDATE certificates SET status = 'Revoked', revoked_at = $1, revocation_reason = $2 WHERE id = $3", [occurredAt, reason, cert.id])
+    const { rows: [head] } = await client.query('SELECT sequence, event_hash FROM audit_events ORDER BY sequence DESC LIMIT 1')
+    const sequence = Number(head?.sequence ?? 0) + 1
+    const previousHash = head?.event_hash ?? 'GENESIS'
+    const payload = JSON.stringify({ reason })
+    const canonical = ['audit-v1', String(sequence), previousHash, occurredAt, prefix('certificate.revoked'), prefix(publicId), prefix(payload)].join('\n')
+    const hash = crypto.createHash('sha256').update(canonical).digest('hex').toUpperCase()
+    await client.query('INSERT INTO audit_events(sequence, previous_hash, event_hash, occurred_at, event_type, entity_id, payload) VALUES ($1,$2,$3,$4,$5,$6,$7)', [sequence, previousHash, hash, occurredAt, 'certificate.revoked', publicId, payload])
+    return true
   })
-
-  return true
 }

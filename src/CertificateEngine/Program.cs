@@ -6,7 +6,6 @@ using CertificateEngine.Infrastructure.Delivery;
 using CertificateEngine.Infrastructure.Audit;
 using CertificateEngine.Infrastructure.Persistence;
 using CertificateEngine.Infrastructure.Sheets;
-using CertificateEngine.Infrastructure.Auth;
 using Microsoft.Extensions.Options;
 using System.Net;
 
@@ -42,7 +41,17 @@ var app = builder.Build();
 app.UseCors();
 await app.Services.GetRequiredService<CertificateDatabase>().InitializeAsync(CancellationToken.None);
 
-if (args.Length > 0 && args[0] == "initialize") return 0;
+if (args.Length > 0 && args[0] == "initialize")
+{
+    if (app.Services.GetRequiredService<CertificateDatabase>().IsPostgres)
+    {
+        if (!app.Services.GetRequiredService<IOptions<SigningOptions>>().Value.Enabled)
+            throw new InvalidOperationException("Certificate signing must be enabled for PostgreSQL deployments.");
+        // Fail startup before the public gateway accepts requests if keys are absent or invalid.
+        _ = app.Services.GetRequiredService<CertificateArtifactService>();
+    }
+    return 0;
+}
 
 if (args.Length > 0 && (args[0] == "issue" || args[0] == "issue-batch"))
 {
@@ -281,10 +290,8 @@ app.MapGet("/manage/certificates/{publicId}/download", async (string publicId, H
     if (!ManagementAuthorized(context, options)) return Results.Unauthorized();
     var certificate = await repository.FindByPublicIdAsync(publicId, ct);
     if (certificate?.ArtifactPath is not { Length: > 0 } artifactPath) return Results.NotFound();
-    var root = Path.GetFullPath(database.DataDirectory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-    var file = Path.GetFullPath(Path.Combine(root, artifactPath.Replace('/', Path.DirectorySeparatorChar)));
-    if (!file.StartsWith(root, StringComparison.OrdinalIgnoreCase) || !File.Exists(file)) return Results.NotFound();
-    return Results.File(file, "application/pdf", $"certificate-{certificate.CertificateNumber}.pdf");
+    var bytes = await database.ReadFileAsync(artifactPath, ct);
+    return bytes is null ? Results.NotFound() : Results.File(bytes, "application/pdf", $"certificate-{certificate.CertificateNumber}.pdf");
 });
 
 app.MapGet("/internal/health", (HttpRequest request, IOptions<PlatformOptions> options) => Authorized(request, options) ? Results.Ok(new { status = "ok" }) : Results.Unauthorized());
@@ -441,73 +448,15 @@ app.MapPost("/internal/issue/batch", async (BatchIssueRequest body, HttpRequest 
     return Results.Ok(results);
 });
 
-app.MapPost("/internal/auth/register", async (RegisterRequest body, HttpRequest request, IOptions<PlatformOptions> options, CertificateRepository repository, CancellationToken ct) =>
+// Browser sessions are owned by the Next.js gateway. Legacy token endpoints never
+// persisted or validated their tokens, so they must not issue credentials.
+foreach (var action in new[] { "register", "login", "refresh", "logout" })
 {
-    if (!Authorized(request, options)) return Results.Unauthorized();
-    if (string.IsNullOrWhiteSpace(body.Name) || string.IsNullOrWhiteSpace(body.Email) || string.IsNullOrWhiteSpace(body.Password))
-    {
-        return Results.BadRequest(new { error = "Name, email, and password are required." });
-    }
-
-    var existing = await repository.FindUserByEmailAsync(body.Email, ct);
-    if (existing is not null)
-    {
-        return Results.Conflict(new { error = "An account with this email already exists." });
-    }
-
-    var hash = PasswordHasher.HashPassword(body.Password);
-    var user = await repository.CreateUserAsync(body.Name, body.Email, hash, "admin", ct);
-    var accessToken = PasswordHasher.GenerateToken();
-    var refreshToken = PasswordHasher.GenerateToken();
-
-    return Results.Ok(new AuthResponse(
-        accessToken,
-        refreshToken,
-        new UserInfo(user.Id, user.Name, user.Email, user.Role)));
-});
-
-app.MapPost("/internal/auth/login", async (LoginRequest body, HttpRequest request, IOptions<PlatformOptions> options, CertificateRepository repository, CancellationToken ct) =>
-{
-    if (!Authorized(request, options)) return Results.Unauthorized();
-    if (string.IsNullOrWhiteSpace(body.Email) || string.IsNullOrWhiteSpace(body.Password))
-    {
-        return Results.BadRequest(new { error = "Email and password are required." });
-    }
-
-    var user = await repository.FindUserByEmailAsync(body.Email, ct);
-    if (user is null || !PasswordHasher.VerifyPassword(body.Password, user.PasswordHash))
-    {
-        return Results.Unauthorized();
-    }
-
-    var accessToken = PasswordHasher.GenerateToken();
-    var refreshToken = PasswordHasher.GenerateToken();
-
-    return Results.Ok(new AuthResponse(
-        accessToken,
-        refreshToken,
-        new UserInfo(user.Id, user.Name, user.Email, user.Role)));
-});
-
-app.MapPost("/internal/auth/refresh", (RefreshRequest body, HttpRequest request, IOptions<PlatformOptions> options) =>
-{
-    if (!Authorized(request, options)) return Results.Unauthorized();
-    if (string.IsNullOrWhiteSpace(body.RefreshToken))
-    {
-        return Results.BadRequest(new { error = "Refresh token is required." });
-    }
-
-    var accessToken = PasswordHasher.GenerateToken();
-    var refreshToken = PasswordHasher.GenerateToken();
-
-    return Results.Ok(new
-    {
-        accessToken,
-        refreshToken
-    });
-});
-
-app.MapPost("/internal/auth/logout", () => Results.Ok(new { success = true }));
+    app.MapPost($"/internal/auth/{action}", (HttpRequest request, IOptions<PlatformOptions> options) =>
+        Authorized(request, options)
+            ? Results.Json(new { error = "Use the gateway authentication endpoint." }, statusCode: 410)
+            : Results.Unauthorized());
+}
 
 app.MapPost("/internal/events/{eventId}/poll-now", async (string eventId, HttpRequest request, IOptions<PlatformOptions> options, CertificateIssuanceWorker worker, CancellationToken ct) =>
 {

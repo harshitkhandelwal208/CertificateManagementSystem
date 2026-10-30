@@ -4,7 +4,8 @@ using CertificateEngine.Api;
 using CertificateEngine.Configuration;
 using CertificateEngine.Domain;
 using CertificateEngine.Infrastructure.Audit;
-using Microsoft.Data.Sqlite;
+using System.Data.Common;
+using CertificatePlatform.Persistence;
 
 namespace CertificateEngine.Infrastructure.Persistence;
 
@@ -17,7 +18,7 @@ public sealed class CertificateRepository(CertificateDatabase database)
     {
         var issuanceKey = $"{submission.EventId}:{submission.Participant.SourceId}";
         await using var connection = await database.OpenConnectionAsync(cancellationToken);
-        await using var transaction = connection.BeginTransaction(deferred: false);
+        await using var transaction = await connection.BeginWriteAsync(cancellationToken);
 
         var existing = await FindByIssuanceKeyAsync(connection, transaction, issuanceKey, cancellationToken);
         if (existing is not null)
@@ -38,24 +39,24 @@ public sealed class CertificateRepository(CertificateDatabase database)
                  source_hash, participant_name, participant_email, participant_phone, template_id,
                  source_row_number, status, created_at)
             VALUES
-                ($issuanceKey, $publicId, $certificateNumber, $eventId, $eventName, $sourceId,
-                 $sourceHash, $participantName, $participantEmail, $participantPhone, $templateId,
-                 $sourceRowNumber, 'Pending', $createdAt)
+                (@issuanceKey, @publicId, @certificateNumber, @eventId, @eventName, @sourceId,
+                 @sourceHash, @participantName, @participantEmail, @participantPhone, @templateId,
+                 @sourceRowNumber, 'Pending', @createdAt)
             RETURNING id;
             """;
-        insert.Parameters.AddWithValue("$issuanceKey", issuanceKey);
-        insert.Parameters.AddWithValue("$publicId", publicId);
-        insert.Parameters.AddWithValue("$certificateNumber", certificateNumber);
-        insert.Parameters.AddWithValue("$eventId", submission.EventId);
-        insert.Parameters.AddWithValue("$eventName", submission.EventName);
-        insert.Parameters.AddWithValue("$sourceId", submission.Participant.SourceId);
-        insert.Parameters.AddWithValue("$sourceHash", submission.SourceHash);
-        insert.Parameters.AddWithValue("$participantName", submission.Participant.FullName);
-        insert.Parameters.AddWithValue("$participantEmail", (object?)submission.Participant.Email ?? DBNull.Value);
-        insert.Parameters.AddWithValue("$participantPhone", (object?)submission.Participant.PhoneNumber ?? DBNull.Value);
-        insert.Parameters.AddWithValue("$templateId", eventOptions.TemplateId);
-        insert.Parameters.AddWithValue("$sourceRowNumber", submission.RowNumber);
-        insert.Parameters.AddWithValue("$createdAt", Format(now));
+        insert.Parameters.AddWithValue("@issuanceKey", issuanceKey);
+        insert.Parameters.AddWithValue("@publicId", publicId);
+        insert.Parameters.AddWithValue("@certificateNumber", certificateNumber);
+        insert.Parameters.AddWithValue("@eventId", submission.EventId);
+        insert.Parameters.AddWithValue("@eventName", submission.EventName);
+        insert.Parameters.AddWithValue("@sourceId", submission.Participant.SourceId);
+        insert.Parameters.AddWithValue("@sourceHash", submission.SourceHash);
+        insert.Parameters.AddWithValue("@participantName", submission.Participant.FullName);
+        insert.Parameters.AddWithValue("@participantEmail", (object?)submission.Participant.Email ?? DBNull.Value);
+        insert.Parameters.AddWithValue("@participantPhone", (object?)submission.Participant.PhoneNumber ?? DBNull.Value);
+        insert.Parameters.AddWithValue("@templateId", eventOptions.TemplateId);
+        insert.Parameters.AddWithValue("@sourceRowNumber", submission.RowNumber);
+        insert.Parameters.AddWithValue("@createdAt", Format(now));
         var id = Convert.ToInt64(await insert.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
 
         await AuditChain.AppendAsync(connection, transaction, "certificate.reserved", publicId,
@@ -86,7 +87,7 @@ public sealed class CertificateRepository(CertificateDatabase database)
         CancellationToken cancellationToken)
     {
         await using var connection = await database.OpenConnectionAsync(cancellationToken);
-        await using var transaction = connection.BeginTransaction(deferred: false);
+        await using var transaction = await connection.BeginWriteAsync(cancellationToken);
         var certificate = await FindByIdAsync(connection, transaction, certificateId, cancellationToken)
             ?? throw new InvalidOperationException($"Certificate {certificateId} does not exist.");
 
@@ -106,15 +107,15 @@ public sealed class CertificateRepository(CertificateDatabase database)
         update.Transaction = transaction;
         update.CommandText = """
             UPDATE certificates
-            SET status = 'Issued', artifact_path = $artifactPath, artifact_sha256 = $artifactSha256,
-                signer_thumbprint = $signerThumbprint, issued_at = $issuedAt
-            WHERE id = $id AND status = 'Pending';
+            SET status = 'Issued', artifact_path = @artifactPath, artifact_sha256 = @artifactSha256,
+                signer_thumbprint = @signerThumbprint, issued_at = @issuedAt
+            WHERE id = @id AND status = 'Pending';
             """;
-        update.Parameters.AddWithValue("$artifactPath", artifactPath);
-        update.Parameters.AddWithValue("$artifactSha256", artifactSha256);
-        update.Parameters.AddWithValue("$signerThumbprint", signerThumbprint);
-        update.Parameters.AddWithValue("$issuedAt", Format(now));
-        update.Parameters.AddWithValue("$id", certificateId);
+        update.Parameters.AddWithValue("@artifactPath", artifactPath);
+        update.Parameters.AddWithValue("@artifactSha256", artifactSha256);
+        update.Parameters.AddWithValue("@signerThumbprint", signerThumbprint);
+        update.Parameters.AddWithValue("@issuedAt", Format(now));
+        update.Parameters.AddWithValue("@id", certificateId);
         await update.ExecuteNonQueryAsync(cancellationToken);
 
         await AuditChain.AppendAsync(connection, transaction, "certificate.issued", certificate.PublicId,
@@ -155,7 +156,7 @@ public sealed class CertificateRepository(CertificateDatabase database)
     public async Task MarkIssuanceFailedAsync(long certificateId, string error, CancellationToken cancellationToken)
     {
         await using var connection = await database.OpenConnectionAsync(cancellationToken);
-        await using var transaction = connection.BeginTransaction(deferred: false);
+        await using var transaction = await connection.BeginWriteAsync(cancellationToken);
         var certificate = await FindByIdAsync(connection, transaction, certificateId, cancellationToken);
         if (certificate is null || certificate.Status != CertificateStatus.Pending)
         {
@@ -165,8 +166,8 @@ public sealed class CertificateRepository(CertificateDatabase database)
 
         var update = connection.CreateCommand();
         update.Transaction = transaction;
-        update.CommandText = "UPDATE certificates SET status = 'Failed' WHERE id = $id AND status = 'Pending';";
-        update.Parameters.AddWithValue("$id", certificateId);
+        update.CommandText = "UPDATE certificates SET status = 'Failed' WHERE id = @id AND status = 'Pending';";
+        update.Parameters.AddWithValue("@id", certificateId);
         await update.ExecuteNonQueryAsync(cancellationToken);
 
         await AuditChain.AppendAsync(connection, transaction, "certificate.failed", certificate.PublicId,
@@ -178,7 +179,7 @@ public sealed class CertificateRepository(CertificateDatabase database)
     {
         var now = DateTimeOffset.UtcNow;
         await using var connection = await database.OpenConnectionAsync(cancellationToken);
-        await using var transaction = connection.BeginTransaction(deferred: false);
+        await using var transaction = await connection.BeginWriteAsync(cancellationToken);
 
         var select = connection.CreateCommand();
         select.Transaction = transaction;
@@ -186,13 +187,13 @@ public sealed class CertificateRepository(CertificateDatabase database)
             SELECT id, certificate_id, channel, destination, status, attempt_count,
                    next_attempt_at, provider_message_id, last_error
             FROM deliveries
-            WHERE (status = 'Pending' OR (status = 'Processing' AND next_attempt_at <= $now))
-              AND attempt_count < $maxAttempts
+            WHERE status IN ('Pending', 'Processing') AND next_attempt_at <= @now
+              AND attempt_count < @maxAttempts
             ORDER BY next_attempt_at, id
             LIMIT 1;
             """;
-        select.Parameters.AddWithValue("$now", Format(now));
-        select.Parameters.AddWithValue("$maxAttempts", maxAttempts);
+        select.Parameters.AddWithValue("@now", Format(now));
+        select.Parameters.AddWithValue("@maxAttempts", maxAttempts);
 
         DeliveryRecord? delivery = null;
         await using (var reader = await select.ExecuteReaderAsync(cancellationToken))
@@ -215,12 +216,12 @@ public sealed class CertificateRepository(CertificateDatabase database)
         update.CommandText = """
             UPDATE deliveries
             SET status = 'Processing', attempt_count = attempt_count + 1,
-                next_attempt_at = $leaseUntil, updated_at = $now
-            WHERE id = $id;
+                next_attempt_at = @leaseUntil, updated_at = @now
+            WHERE id = @id;
             """;
-        update.Parameters.AddWithValue("$leaseUntil", Format(leaseUntil));
-        update.Parameters.AddWithValue("$now", Format(now));
-        update.Parameters.AddWithValue("$id", delivery.Id);
+        update.Parameters.AddWithValue("@leaseUntil", Format(leaseUntil));
+        update.Parameters.AddWithValue("@now", Format(now));
+        update.Parameters.AddWithValue("@id", delivery.Id);
         await update.ExecuteNonQueryAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -238,18 +239,18 @@ public sealed class CertificateRepository(CertificateDatabase database)
         CancellationToken cancellationToken)
     {
         await using var connection = await database.OpenConnectionAsync(cancellationToken);
-        await using var transaction = connection.BeginTransaction(deferred: false);
+        await using var transaction = await connection.BeginWriteAsync(cancellationToken);
         var update = connection.CreateCommand();
         update.Transaction = transaction;
         update.CommandText = """
             UPDATE deliveries
-            SET status = 'Sent', provider_message_id = $providerMessageId,
-                last_error = NULL, updated_at = $now
-            WHERE id = $id AND status = 'Processing';
+            SET status = 'Sent', provider_message_id = @providerMessageId,
+                last_error = NULL, updated_at = @now
+            WHERE id = @id AND status = 'Processing';
             """;
-        update.Parameters.AddWithValue("$providerMessageId", providerMessageId);
-        update.Parameters.AddWithValue("$now", Format(DateTimeOffset.UtcNow));
-        update.Parameters.AddWithValue("$id", delivery.Id);
+        update.Parameters.AddWithValue("@providerMessageId", providerMessageId);
+        update.Parameters.AddWithValue("@now", Format(DateTimeOffset.UtcNow));
+        update.Parameters.AddWithValue("@id", delivery.Id);
         await update.ExecuteNonQueryAsync(cancellationToken);
 
         await AuditChain.AppendAsync(connection, transaction, "delivery.sent", delivery.CertificateId.ToString(CultureInfo.InvariantCulture),
@@ -273,20 +274,20 @@ public sealed class CertificateRepository(CertificateDatabase database)
         var nextAttempt = DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
 
         await using var connection = await database.OpenConnectionAsync(cancellationToken);
-        await using var transaction = connection.BeginTransaction(deferred: false);
+        await using var transaction = await connection.BeginWriteAsync(cancellationToken);
         var update = connection.CreateCommand();
         update.Transaction = transaction;
         update.CommandText = """
             UPDATE deliveries
-            SET status = $status, next_attempt_at = $nextAttempt,
-                last_error = $error, updated_at = $now
-            WHERE id = $id AND status = 'Processing';
+            SET status = @status, next_attempt_at = @nextAttempt,
+                last_error = @error, updated_at = @now
+            WHERE id = @id AND status = 'Processing';
             """;
-        update.Parameters.AddWithValue("$status", finalFailure ? "Failed" : "Pending");
-        update.Parameters.AddWithValue("$nextAttempt", Format(nextAttempt));
-        update.Parameters.AddWithValue("$error", Truncate(error, 1000));
-        update.Parameters.AddWithValue("$now", Format(DateTimeOffset.UtcNow));
-        update.Parameters.AddWithValue("$id", delivery.Id);
+        update.Parameters.AddWithValue("@status", finalFailure ? "Failed" : "Pending");
+        update.Parameters.AddWithValue("@nextAttempt", Format(nextAttempt));
+        update.Parameters.AddWithValue("@error", Truncate(error, 1000));
+        update.Parameters.AddWithValue("@now", Format(DateTimeOffset.UtcNow));
+        update.Parameters.AddWithValue("@id", delivery.Id);
         await update.ExecuteNonQueryAsync(cancellationToken);
 
         await AuditChain.AppendAsync(connection, transaction,
@@ -305,7 +306,7 @@ public sealed class CertificateRepository(CertificateDatabase database)
     public async Task EnsureEmailDeliveryAsync(long certificateId, CancellationToken cancellationToken)
     {
         await using var connection = await database.OpenConnectionAsync(cancellationToken);
-        await using var transaction = connection.BeginTransaction(deferred: false);
+        await using var transaction = await connection.BeginWriteAsync(cancellationToken);
         var certificate = await FindByIdAsync(connection, transaction, certificateId, cancellationToken);
         if (certificate is not null && !string.IsNullOrWhiteSpace(certificate.ParticipantEmail))
         {
@@ -320,8 +321,8 @@ public sealed class CertificateRepository(CertificateDatabase database)
     {
         await using var connection = await database.OpenConnectionAsync(cancellationToken);
         var command = connection.CreateCommand();
-        command.CommandText = "SELECT * FROM certificates WHERE public_id = $publicId LIMIT 1;";
-        command.Parameters.AddWithValue("$publicId", publicId);
+        command.CommandText = "SELECT * FROM certificates WHERE public_id = @publicId LIMIT 1;";
+        command.Parameters.AddWithValue("@publicId", publicId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadCertificate(reader) : null;
     }
@@ -331,8 +332,8 @@ public sealed class CertificateRepository(CertificateDatabase database)
         var records = new List<CertificateRecord>();
         await using var connection = await database.OpenConnectionAsync(cancellationToken);
         var command = connection.CreateCommand();
-        command.CommandText = "SELECT * FROM certificates ORDER BY created_at DESC, id DESC LIMIT $take;";
-        command.Parameters.AddWithValue("$take", Math.Clamp(take, 1, 500));
+        command.CommandText = "SELECT * FROM certificates ORDER BY created_at DESC, id DESC LIMIT @take;";
+        command.Parameters.AddWithValue("@take", Math.Clamp(take, 1, 500));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
@@ -351,11 +352,11 @@ public sealed class CertificateRepository(CertificateDatabase database)
     public async Task<bool> RevokeAsync(string publicId, string reason, CancellationToken cancellationToken)
     {
         await using var connection = await database.OpenConnectionAsync(cancellationToken);
-        await using var transaction = connection.BeginTransaction(deferred: false);
+        await using var transaction = await connection.BeginWriteAsync(cancellationToken);
         var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT * FROM certificates WHERE public_id = $publicId LIMIT 1;";
-        command.Parameters.AddWithValue("$publicId", publicId);
+        command.CommandText = "SELECT * FROM certificates WHERE public_id = @publicId LIMIT 1;";
+        command.Parameters.AddWithValue("@publicId", publicId);
         CertificateRecord? certificate;
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {
@@ -385,12 +386,12 @@ public sealed class CertificateRepository(CertificateDatabase database)
         update.Transaction = transaction;
         update.CommandText = """
             UPDATE certificates
-            SET status = 'Revoked', revoked_at = $revokedAt, revocation_reason = $reason
-            WHERE id = $id AND status = 'Issued';
+            SET status = 'Revoked', revoked_at = @revokedAt, revocation_reason = @reason
+            WHERE id = @id AND status = 'Issued';
             """;
-        update.Parameters.AddWithValue("$revokedAt", Format(now));
-        update.Parameters.AddWithValue("$reason", Truncate(reason, 500));
-        update.Parameters.AddWithValue("$id", certificate.Id);
+        update.Parameters.AddWithValue("@revokedAt", Format(now));
+        update.Parameters.AddWithValue("@reason", Truncate(reason, 500));
+        update.Parameters.AddWithValue("@id", certificate.Id);
         await update.ExecuteNonQueryAsync(cancellationToken);
 
         await AuditChain.AppendAsync(connection, transaction, "certificate.revoked", certificate.PublicId,
@@ -406,36 +407,36 @@ public sealed class CertificateRepository(CertificateDatabase database)
     }
 
     private static async Task<CertificateRecord?> FindByIssuanceKeyAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
+        DbConnection connection,
+        DbTransaction transaction,
         string issuanceKey,
         CancellationToken cancellationToken)
     {
         var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT * FROM certificates WHERE issuance_key = $issuanceKey LIMIT 1;";
-        command.Parameters.AddWithValue("$issuanceKey", issuanceKey);
+        command.CommandText = "SELECT * FROM certificates WHERE issuance_key = @issuanceKey LIMIT 1;";
+        command.Parameters.AddWithValue("@issuanceKey", issuanceKey);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadCertificate(reader) : null;
     }
 
     private static async Task<CertificateRecord?> FindByIdAsync(
-        SqliteConnection connection,
-        SqliteTransaction? transaction,
+        DbConnection connection,
+        DbTransaction? transaction,
         long id,
         CancellationToken cancellationToken)
     {
         var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT * FROM certificates WHERE id = $id LIMIT 1;";
-        command.Parameters.AddWithValue("$id", id);
+        command.CommandText = "SELECT * FROM certificates WHERE id = @id LIMIT 1;";
+        command.Parameters.AddWithValue("@id", id);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadCertificate(reader) : null;
     }
 
     private static async Task InsertDeliveryAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
+        DbConnection connection,
+        DbTransaction transaction,
         long certificateId,
         DeliveryChannel channel,
         string destination,
@@ -445,19 +446,19 @@ public sealed class CertificateRepository(CertificateDatabase database)
         var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            INSERT OR IGNORE INTO deliveries
+            INSERT INTO deliveries
                 (certificate_id, channel, destination, status, attempt_count, next_attempt_at, updated_at)
             VALUES
-                ($certificateId, $channel, $destination, 'Pending', 0, $now, $now);
+                (@certificateId, @channel, @destination, 'Pending', 0, @now, @now) ON CONFLICT(certificate_id, channel, destination) DO NOTHING;
             """;
-        command.Parameters.AddWithValue("$certificateId", certificateId);
-        command.Parameters.AddWithValue("$channel", channel.ToString());
-        command.Parameters.AddWithValue("$destination", destination);
-        command.Parameters.AddWithValue("$now", Format(now));
+        command.Parameters.AddWithValue("@certificateId", certificateId);
+        command.Parameters.AddWithValue("@channel", channel.ToString());
+        command.Parameters.AddWithValue("@destination", destination);
+        command.Parameters.AddWithValue("@now", Format(now));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static CertificateRecord ReadCertificate(SqliteDataReader reader) => new(
+    private static CertificateRecord ReadCertificate(DbDataReader reader) => new(
         reader.GetInt64(reader.GetOrdinal("id")),
         reader.GetString(reader.GetOrdinal("issuance_key")),
         reader.GetString(reader.GetOrdinal("public_id")),
@@ -480,7 +481,7 @@ public sealed class CertificateRepository(CertificateDatabase database)
         GetNullableDate(reader, "revoked_at"),
         GetNullableString(reader, "revocation_reason"));
 
-    private static DeliveryRecord ReadDelivery(SqliteDataReader reader) => new(
+    private static DeliveryRecord ReadDelivery(DbDataReader reader) => new(
         reader.GetInt64(0),
         reader.GetInt64(1),
         Enum.Parse<DeliveryChannel>(reader.GetString(2), true),
@@ -491,13 +492,13 @@ public sealed class CertificateRepository(CertificateDatabase database)
         reader.IsDBNull(7) ? null : reader.GetString(7),
         reader.IsDBNull(8) ? null : reader.GetString(8));
 
-    private static string? GetNullableString(SqliteDataReader reader, string column)
+    private static string? GetNullableString(DbDataReader reader, string column)
     {
         var ordinal = reader.GetOrdinal(column);
         return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
     }
 
-    private static DateTimeOffset? GetNullableDate(SqliteDataReader reader, string column)
+    private static DateTimeOffset? GetNullableDate(DbDataReader reader, string column)
     {
         var value = GetNullableString(reader, column);
         return value is null ? null : ParseDate(value);
@@ -540,8 +541,8 @@ public sealed class CertificateRepository(CertificateDatabase database)
     {
         await using var connection = await database.OpenConnectionAsync(cancellationToken);
         var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, name, email, password_hash, role, created_at FROM users WHERE email = $email LIMIT 1;";
-        command.Parameters.AddWithValue("$email", email.Trim().ToLowerInvariant());
+        command.CommandText = "SELECT id, name, email, password_hash, role, created_at FROM users WHERE email = @email LIMIT 1;";
+        command.Parameters.AddWithValue("@email", email.Trim().ToLowerInvariant());
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
         return new UserRecord(
@@ -557,8 +558,8 @@ public sealed class CertificateRepository(CertificateDatabase database)
     {
         await using var connection = await database.OpenConnectionAsync(cancellationToken);
         var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, name, email, password_hash, role, created_at FROM users WHERE id = $id LIMIT 1;";
-        command.Parameters.AddWithValue("$id", id);
+        command.CommandText = "SELECT id, name, email, password_hash, role, created_at FROM users WHERE id = @id LIMIT 1;";
+        command.Parameters.AddWithValue("@id", id);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
         return new UserRecord(
@@ -577,14 +578,14 @@ public sealed class CertificateRepository(CertificateDatabase database)
         var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO users (name, email, password_hash, role, created_at)
-            VALUES ($name, $email, $passwordHash, $role, $createdAt)
+            VALUES (@name, @email, @passwordHash, @role, @createdAt)
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("$name", name.Trim());
-        command.Parameters.AddWithValue("$email", email.Trim().ToLowerInvariant());
-        command.Parameters.AddWithValue("$passwordHash", passwordHash);
-        command.Parameters.AddWithValue("$role", string.IsNullOrWhiteSpace(role) ? "admin" : role.Trim());
-        command.Parameters.AddWithValue("$createdAt", Format(now));
+        command.Parameters.AddWithValue("@name", name.Trim());
+        command.Parameters.AddWithValue("@email", email.Trim().ToLowerInvariant());
+        command.Parameters.AddWithValue("@passwordHash", passwordHash);
+        command.Parameters.AddWithValue("@role", string.IsNullOrWhiteSpace(role) ? "admin" : role.Trim());
+        command.Parameters.AddWithValue("@createdAt", Format(now));
         var id = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
         return new UserRecord(id, name.Trim(), email.Trim().ToLowerInvariant(), passwordHash, role, now);
     }
@@ -608,7 +609,7 @@ public sealed class CertificateRepository(CertificateDatabase database)
             while (await reader.ReadAsync(cancellationToken))
             {
                 var eventId = reader.GetString(0);
-                var total = reader.GetInt32(1);
+                var total = Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture);
                 var issued = reader.IsDBNull(2) ? 0 : Convert.ToInt32(reader.GetValue(2), CultureInfo.InvariantCulture);
                 var earliest = reader.IsDBNull(3) ? null : reader.GetString(3);
                 statsByEvent[eventId] = (total, issued, earliest);
@@ -636,8 +637,8 @@ public sealed class CertificateRepository(CertificateDatabase database)
             if (seenEventIds.Add(eventId))
             {
                 var metaCmd = connection.CreateCommand();
-                metaCmd.CommandText = "SELECT event_name, template_id FROM certificates WHERE event_id = $eventId LIMIT 1;";
-                metaCmd.Parameters.AddWithValue("$eventId", eventId);
+                metaCmd.CommandText = "SELECT event_name, template_id FROM certificates WHERE event_id = @eventId LIMIT 1;";
+                metaCmd.Parameters.AddWithValue("@eventId", eventId);
                 var evName = eventId;
                 var tmplId = "default";
                 await using var metaReader = await metaCmd.ExecuteReaderAsync(cancellationToken);
@@ -670,15 +671,15 @@ public sealed class CertificateRepository(CertificateDatabase database)
 
         var statsCmd = connection.CreateCommand();
         statsCmd.CommandText = """
-            SELECT event_name, template_id,
+            SELECT MAX(event_name), MAX(template_id),
                    COUNT(*) as total_count,
                    SUM(CASE WHEN status = 'Issued' THEN 1 ELSE 0 END) as issued_count,
                    MIN(created_at) as earliest_created_at
             FROM certificates
-            WHERE event_id = $eventId
+            WHERE event_id = @eventId
             GROUP BY event_id;
             """;
-        statsCmd.Parameters.AddWithValue("$eventId", eventId);
+        statsCmd.Parameters.AddWithValue("@eventId", eventId);
 
         int totalCount = 0;
         int issuedCount = 0;
@@ -695,7 +696,7 @@ public sealed class CertificateRepository(CertificateDatabase database)
                     eventName = reader.GetString(0);
                     templateId = reader.GetString(1);
                 }
-                totalCount = reader.GetInt32(2);
+                totalCount = Convert.ToInt32(reader.GetValue(2), CultureInfo.InvariantCulture);
                 issuedCount = reader.IsDBNull(3) ? 0 : Convert.ToInt32(reader.GetValue(3), CultureInfo.InvariantCulture);
                 earliest = reader.IsDBNull(4) ? null : reader.GetString(4);
             }
@@ -710,13 +711,13 @@ public sealed class CertificateRepository(CertificateDatabase database)
         var certsCmd = connection.CreateCommand();
         certsCmd.CommandText = """
             SELECT * FROM certificates
-            WHERE event_id = $eventId
+            WHERE event_id = @eventId
             ORDER BY id DESC
-            LIMIT $limit OFFSET $offset;
+            LIMIT @limit OFFSET @offset;
             """;
-        certsCmd.Parameters.AddWithValue("$eventId", eventId);
-        certsCmd.Parameters.AddWithValue("$limit", pageSize);
-        certsCmd.Parameters.AddWithValue("$offset", offset);
+        certsCmd.Parameters.AddWithValue("@eventId", eventId);
+        certsCmd.Parameters.AddWithValue("@limit", pageSize);
+        certsCmd.Parameters.AddWithValue("@offset", offset);
 
         var items = new List<CertificateSummaryDto>();
         await using (var reader = await certsCmd.ExecuteReaderAsync(cancellationToken))
@@ -746,20 +747,20 @@ public sealed class CertificateRepository(CertificateDatabase database)
 
         if (!string.IsNullOrWhiteSpace(eventId))
         {
-            whereClauses.Add("event_id = $eventId");
-            parameters.Add(("$eventId", eventId.Trim()));
+            whereClauses.Add("event_id = @eventId");
+            parameters.Add(("@eventId", eventId.Trim()));
         }
 
         if (!string.IsNullOrWhiteSpace(status))
         {
-            whereClauses.Add("status = $status COLLATE NOCASE");
-            parameters.Add(("$status", status.Trim()));
+            whereClauses.Add("lower(status) = lower(@status)");
+            parameters.Add(("@status", status.Trim()));
         }
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            whereClauses.Add("(participant_name LIKE $search OR certificate_number LIKE $search OR public_id LIKE $search)");
-            parameters.Add(("$search", $"%{search.Trim()}%"));
+            whereClauses.Add("(lower(participant_name) LIKE lower(@search) OR lower(certificate_number) LIKE lower(@search) OR lower(public_id) LIKE lower(@search))");
+            parameters.Add(("@search", $"%{search.Trim()}%"));
         }
 
         var whereSql = whereClauses.Count > 0 ? "WHERE " + string.Join(" AND ", whereClauses) : "";
@@ -771,10 +772,10 @@ public sealed class CertificateRepository(CertificateDatabase database)
 
         var offset = (page - 1) * pageSize;
         var dataCmd = connection.CreateCommand();
-        dataCmd.CommandText = $"SELECT * FROM certificates {whereSql} ORDER BY id DESC LIMIT $limit OFFSET $offset;";
+        dataCmd.CommandText = $"SELECT * FROM certificates {whereSql} ORDER BY id DESC LIMIT @limit OFFSET @offset;";
         foreach (var p in parameters) dataCmd.Parameters.AddWithValue(p.Name, p.Value);
-        dataCmd.Parameters.AddWithValue("$limit", pageSize);
-        dataCmd.Parameters.AddWithValue("$offset", offset);
+        dataCmd.Parameters.AddWithValue("@limit", pageSize);
+        dataCmd.Parameters.AddWithValue("@offset", offset);
 
         var items = new List<CertificateSummaryDto>();
         await using (var reader = await dataCmd.ExecuteReaderAsync(cancellationToken))

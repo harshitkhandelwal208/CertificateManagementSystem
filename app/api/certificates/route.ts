@@ -1,3 +1,4 @@
+import { apiError, pageNumber, stringField } from '@/lib/server/http';
 import { NextResponse } from 'next/server';
 import { getCertificatesPaginated } from '@/lib/server/certificates';
 
@@ -6,13 +7,13 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const pageSize = parseInt(searchParams.get('pageSize') || '50', 10);
+    const page = pageNumber(searchParams.get('page'), 1);
+    const pageSize = pageNumber(searchParams.get('pageSize'), 50, 200);
     const eventId = searchParams.get('eventId');
     const status = searchParams.get('status');
     const search = searchParams.get('search');
 
-    const result = getCertificatesPaginated({
+    const result = await getCertificatesPaginated({
       page,
       pageSize,
       eventId,
@@ -22,6 +23,6 @@ export async function GET(request: Request) {
 
     return NextResponse.json(result);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiError(error);
   }
 }

@@ -3,6 +3,9 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Data.Sqlite;
+using System.Data.Common;
+using Npgsql;
+using CertificatePlatform.Persistence;
 using Microsoft.Extensions.Options;
 
 namespace CertificateVerification.Web;
@@ -14,16 +17,18 @@ public sealed class CertificateLookup(IOptions<VerificationOptions> options)
     public async Task<VerifiedCertificate?> FindAsync(string publicId, CancellationToken cancellationToken)
     {
         var dataDirectory = ResolveDataDirectory();
-        if (!File.Exists(Path.Combine(dataDirectory, "certificates.db"))) return null;
+        var postgres = DatabaseProvider.PostgreSqlConnectionString();
+        if (postgres is null && !File.Exists(Path.Combine(dataDirectory, "certificates.db"))) return null;
         var builder = new SqliteConnectionStringBuilder { DataSource = Path.Combine(dataDirectory, "certificates.db"), Mode = SqliteOpenMode.ReadOnly };
-        await using var connection = new SqliteConnection(builder.ToString());
+        await using DbConnection connection = postgres is not null ? new NpgsqlConnection(postgres) : new SqliteConnection(builder.ToString());
         await connection.OpenAsync(cancellationToken);
         var command = connection.CreateCommand();
-        command.CommandText = "SELECT public_id, certificate_number, participant_name, event_name, template_id, status, artifact_path, artifact_sha256, issued_at, revoked_at, revocation_reason FROM certificates WHERE public_id = $id LIMIT 1;";
-        command.Parameters.AddWithValue("$id", publicId);
+        command.CommandText = "SELECT public_id, certificate_number, participant_name, event_name, template_id, status, artifact_path, artifact_sha256, issued_at, revoked_at, revocation_reason FROM certificates WHERE public_id = @id LIMIT 1;";
+        command.Parameters.AddWithValue("@id", publicId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
         var record = new VerificationRecord(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? "default" : reader.GetString(4), reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : DateTimeOffset.Parse(reader.GetString(8), CultureInfo.InvariantCulture), reader.IsDBNull(9) ? null : DateTimeOffset.Parse(reader.GetString(9), CultureInfo.InvariantCulture), reader.IsDBNull(10) ? null : reader.GetString(10));
+        await reader.DisposeAsync();
         var signatureValid = record.Status == "Issued" && await VerifyArtifactAsync(dataDirectory, record, cancellationToken);
         var status = record.Status == "Revoked" ? "Revoked" : signatureValid ? "Valid" : "Invalid";
         return new VerifiedCertificate(record, status, signatureValid);
@@ -35,14 +40,15 @@ public sealed class CertificateLookup(IOptions<VerificationOptions> options)
         {
             if (string.IsNullOrWhiteSpace(record.ArtifactPath) || string.IsNullOrWhiteSpace(record.ArtifactSha256)) return false;
             var pdfPath = Path.Combine(dataDirectory, record.ArtifactPath.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(pdfPath)) return false;
-            var pdf = await File.ReadAllBytesAsync(pdfPath, cancellationToken);
+            var pdf = await ReadArtifactAsync(dataDirectory, record.ArtifactPath, cancellationToken);
+            if (pdf is null) return false;
             if (!CryptographicOperations.FixedTimeEquals(Convert.FromHexString(record.ArtifactSha256), SHA256.HashData(pdf))) return false;
-            if (string.IsNullOrWhiteSpace(_options.TrustedRootPath)) return true; // local unsigned test mode only
+            if (string.IsNullOrWhiteSpace(_options.TrustedRootPath)) return DatabaseProvider.PostgreSqlConnectionString() is null; // unsigned mode is restricted to local SQLite tests
             var p7sPath = pdfPath + ".p7s";
-            if (!File.Exists(p7sPath)) return false;
+            var signature = await ReadArtifactAsync(dataDirectory, record.ArtifactPath + ".p7s", cancellationToken);
+            if (signature is null) return false;
             var cms = new SignedCms(new ContentInfo(pdf), detached: true);
-            cms.Decode(await File.ReadAllBytesAsync(p7sPath, cancellationToken));
+            cms.Decode(signature);
             cms.CheckSignature(verifySignatureOnly: true);
             var signer = cms.SignerInfos.Count == 1 ? cms.SignerInfos[0].Certificate : null;
             if (signer is null) return false;
@@ -61,6 +67,23 @@ public sealed class CertificateLookup(IOptions<VerificationOptions> options)
         {
             return false;
         }
+    }
+
+    private static async Task<byte[]?> ReadArtifactAsync(string dataDirectory, string relativePath, CancellationToken ct)
+    {
+        var postgres = DatabaseProvider.PostgreSqlConnectionString();
+        if (postgres is not null)
+        {
+            await using var connection = new NpgsqlConnection(postgres);
+            await connection.OpenAsync(ct);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT content FROM runtime_files WHERE path = @path";
+            command.Parameters.AddWithValue("@path", relativePath.Replace('\\', '/'));
+            return await command.ExecuteScalarAsync(ct) as byte[];
+        }
+        var path = Path.GetFullPath(Path.Combine(dataDirectory, relativePath));
+        if (!path.StartsWith(Path.GetFullPath(dataDirectory) + Path.DirectorySeparatorChar, StringComparison.Ordinal)) return null;
+        return File.Exists(path) ? await File.ReadAllBytesAsync(path, ct) : null;
     }
 
     private static string ResolvePath(string path)

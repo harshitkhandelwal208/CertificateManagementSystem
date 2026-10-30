@@ -1,7 +1,4 @@
-import { NextResponse } from 'next/server';
-
-export const dynamic = 'force-dynamic';
-
+import { NextResponse } from 'next/server'
 export async function POST() {
-  return NextResponse.json({ success: true, message: "Sync up to date." });
+  return NextResponse.json({ error: 'Event polling is not configured for this event.' }, { status: 501 })
 }

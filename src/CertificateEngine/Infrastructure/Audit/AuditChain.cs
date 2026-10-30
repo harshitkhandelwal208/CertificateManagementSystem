@@ -2,7 +2,8 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
+using System.Data.Common;
+using CertificatePlatform.Persistence;
 
 namespace CertificateEngine.Infrastructure.Audit;
 
@@ -41,8 +42,8 @@ public static class AuditChain
     }
 
     public static async Task AppendAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
+        DbConnection connection,
+        DbTransaction transaction,
         string eventType,
         string entityId,
         IReadOnlyDictionary<string, string?> payload,
@@ -73,20 +74,20 @@ public static class AuditChain
             INSERT INTO audit_events
                 (sequence, previous_hash, event_hash, occurred_at, event_type, entity_id, payload)
             VALUES
-                ($sequence, $previousHash, $eventHash, $occurredAt, $eventType, $entityId, $payload);
+                (@sequence, @previousHash, @eventHash, @occurredAt, @eventType, @entityId, @payload);
             """;
-        insert.Parameters.AddWithValue("$sequence", sequence);
-        insert.Parameters.AddWithValue("$previousHash", previousHash);
-        insert.Parameters.AddWithValue("$eventHash", eventHash);
-        insert.Parameters.AddWithValue("$occurredAt", occurredAt.ToString("O", CultureInfo.InvariantCulture));
-        insert.Parameters.AddWithValue("$eventType", eventType);
-        insert.Parameters.AddWithValue("$entityId", entityId);
-        insert.Parameters.AddWithValue("$payload", canonicalPayload);
+        insert.Parameters.AddWithValue("@sequence", sequence);
+        insert.Parameters.AddWithValue("@previousHash", previousHash);
+        insert.Parameters.AddWithValue("@eventHash", eventHash);
+        insert.Parameters.AddWithValue("@occurredAt", occurredAt.ToString("O", CultureInfo.InvariantCulture));
+        insert.Parameters.AddWithValue("@eventType", eventType);
+        insert.Parameters.AddWithValue("@entityId", entityId);
+        insert.Parameters.AddWithValue("@payload", canonicalPayload);
         await insert.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public static async Task<AuditVerificationResult> VerifyAsync(
-        SqliteConnection connection,
+        DbConnection connection,
         CancellationToken cancellationToken)
     {
         var command = connection.CreateCommand();

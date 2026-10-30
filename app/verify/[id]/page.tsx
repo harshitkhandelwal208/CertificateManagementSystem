@@ -39,7 +39,7 @@ async function fetchVerification(publicId: string): Promise<VerificationResult |
 
   // 2. Direct database fallback
   try {
-    const cert = getCertificateByPublicId(publicId)
+    const cert = await getCertificateByPublicId(publicId)
     if (!cert) return null
     return {
       publicId: cert.publicId,
@@ -64,7 +64,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>
 }): Promise<Metadata> {
   const { id } = await params
-  const cert = getCertificateByPublicId(id)
+  const cert = await getCertificateByPublicId(id)
   return {
     title: cert
       ? `${cert.participantName} — Clinically Evolve Verified Credential`
@@ -93,7 +93,7 @@ export default async function VerifyCertificatePage({
   const verification = await fetchVerification(id)
   if (!verification) notFound()
 
-  const certificateRecord = getCertificateByPublicId(id)
+  const certificateRecord = await getCertificateByPublicId(id)
   const templateId = verification.templateId || certificateRecord?.templateId || "default"
   const template = resolveTemplate(templateId)
   const accent = template.accent

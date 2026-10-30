@@ -1,3 +1,4 @@
+import { apiError, pageNumber, stringField } from '@/lib/server/http';
 import { NextResponse } from 'next/server';
 import { getCertificateByPublicId } from '@/lib/server/certificates';
 
@@ -9,12 +10,12 @@ export async function GET(
 ) {
   try {
     const { publicId } = await params;
-    const cert = getCertificateByPublicId(publicId);
+    const cert = await getCertificateByPublicId(publicId);
     if (!cert) {
       return NextResponse.json({ error: 'Certificate not found' }, { status: 404 });
     }
     return NextResponse.json(cert);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiError(error);
   }
 }

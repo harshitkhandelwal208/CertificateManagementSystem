@@ -5,6 +5,10 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Npgsql" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/DatabaseProvider.cs" Link="Persistence/DatabaseProvider.cs" />
   </ItemGroup>
 </Project>
