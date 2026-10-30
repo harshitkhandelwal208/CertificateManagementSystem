@@ -34,7 +34,7 @@ export default async function EventsPage() {
       <div className="mb-8 flex flex-col gap-1.5">
         <h1 className="font-serif text-3xl font-semibold text-foreground">Events</h1>
         <p className="text-sm text-muted-foreground">
-          Create an event, choose a certificate design, and issue verifiable credentials to your recipients.
+          Create an event, upload a certificate template, and issue verifiable credentials to your recipients.
         </p>
       </div>
 

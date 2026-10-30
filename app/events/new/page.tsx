@@ -10,28 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldLabel, FieldDescription, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-
-export interface EventDraft {
-  name: string
-  description: string
-}
-
-const DRAFT_KEY = "credentia:event-draft"
-
-export function loadDraft(): EventDraft | null {
-  if (typeof window === "undefined") return null
-  try {
-    const raw = window.sessionStorage.getItem(DRAFT_KEY)
-    return raw ? (JSON.parse(raw) as EventDraft) : null
-  } catch {
-    return null
-  }
-}
-
-export function saveDraft(draft: EventDraft) {
-  if (typeof window === "undefined") return
-  window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
-}
+import { loadDraft, saveDraft } from "@/lib/event-draft"
 
 export default function NewEventPage() {
   const router = useRouter()
@@ -71,7 +50,7 @@ export default function NewEventPage() {
           <Stepper steps={["Event details", "Design", "Confirm"]} current={1} />
           <h1 className="font-serif text-2xl font-semibold text-foreground">Create a new event</h1>
           <p className="text-sm text-muted-foreground">
-            Give your event a name. You&apos;ll choose a certificate design and add recipients next.
+            Give your event a name. You&apos;ll upload a certificate template and add recipients next.
           </p>
         </div>
 

@@ -85,15 +85,19 @@ function toSummaryDto(row: CertificateRow): CertificateSummaryDto {
 export function getEventSummaries(): EventSummaryDto[] {
   const db = getDb()
   const rows = db.prepare(`
-    SELECT event_id,
-           COALESCE(NULLIF(MAX(event_name), ''), event_id) as event_name,
-           COALESCE(NULLIF(MAX(template_id), ''), 'default') as template_id,
-           COUNT(*) as total_count,
-           SUM(CASE WHEN status = 'Issued' THEN 1 ELSE 0 END) as issued_count,
-           MIN(created_at) as earliest_created_at
-    FROM certificates
-    GROUP BY event_id
-    ORDER BY MIN(created_at) DESC
+    WITH all_events AS (
+      SELECT event_id, event_name, template_id, created_at FROM events
+      UNION ALL
+      SELECT event_id, MAX(event_name), MAX(template_id), MIN(created_at)
+      FROM certificates c WHERE NOT EXISTS (SELECT 1 FROM events e WHERE e.event_id = c.event_id COLLATE NOCASE)
+      GROUP BY event_id COLLATE NOCASE
+    )
+    SELECT e.event_id, e.event_name, e.template_id, e.created_at as earliest_created_at,
+           COUNT(c.id) as total_count,
+           SUM(CASE WHEN c.status = 'Issued' THEN 1 ELSE 0 END) as issued_count
+    FROM all_events e LEFT JOIN certificates c ON c.event_id = e.event_id COLLATE NOCASE
+    GROUP BY e.event_id COLLATE NOCASE
+    ORDER BY e.created_at DESC
   `).all() as Array<{
     event_id: string
     event_name: string
@@ -127,26 +131,7 @@ export function getEventDetail(
   certificates: CertificateSummaryDto[]
 } | null {
   const db = getDb()
-  const summaryRow = db.prepare(`
-    SELECT event_id,
-           event_name,
-           template_id,
-           COUNT(*) as total_count,
-           SUM(CASE WHEN status = 'Issued' THEN 1 ELSE 0 END) as issued_count,
-           MIN(created_at) as earliest_created_at
-    FROM certificates
-    WHERE lower(event_id) = lower(?)
-    GROUP BY event_id, event_name, template_id
-    LIMIT 1
-  `).get(eventId) as {
-    event_id: string
-    event_name: string
-    template_id: string
-    total_count: number
-    issued_count: number
-    earliest_created_at: string | null
-  } | undefined
-
+  const summaryRow = getEventSummaries().find((event) => event.eventId.toLowerCase() === eventId.toLowerCase())
   if (!summaryRow) return null
 
   const p = Math.max(1, page)
@@ -161,12 +146,12 @@ export function getEventDetail(
   `).all(eventId, ps, offset) as unknown as CertificateRow[]
 
   return {
-    eventId: summaryRow.event_id,
-    eventName: summaryRow.event_name,
-    templateId: summaryRow.template_id || "default",
-    totalCount: Number(summaryRow.total_count || 0),
-    issuedCount: Number(summaryRow.issued_count || 0),
-    earliestCreatedAt: summaryRow.earliest_created_at,
+    eventId: summaryRow.eventId,
+    eventName: summaryRow.eventName,
+    templateId: summaryRow.templateId,
+    totalCount: summaryRow.totalCount,
+    issuedCount: summaryRow.issuedCount,
+    earliestCreatedAt: summaryRow.earliestCreatedAt,
     certificates: certRows.map(toSummaryDto),
   }
 }

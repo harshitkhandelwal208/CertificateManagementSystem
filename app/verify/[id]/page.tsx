@@ -46,11 +46,11 @@ async function fetchVerification(publicId: string): Promise<VerificationResult |
       certificateNumber: cert.certificateNumber,
       participantName: cert.participantName,
       eventName: cert.eventName,
-      status: cert.status,
+      status: cert.status === "Revoked" ? "Revoked" : "Verification unavailable",
       issuedAtUtc: cert.issuedAtUtc ?? null,
       revokedAtUtc: cert.revokedAtUtc ?? null,
       revocationReason: cert.revocationReason ?? null,
-      signatureValid: cert.status === "Issued",
+      signatureValid: false,
       fileSha256: cert.artifactSha256 ?? null,
     }
   } catch {
@@ -94,8 +94,7 @@ export default async function VerifyCertificatePage({
   if (!verification) notFound()
 
   const certificateRecord = getCertificateByPublicId(id)
-  const templateId = verification.templateId || certificateRecord?.templateId || "heritage-rust"
-  const isCustomTemplate = templateId.toLowerCase().startsWith("custom-")
+  const templateId = verification.templateId || certificateRecord?.templateId || "default"
   const template = resolveTemplate(templateId)
   const accent = template.accent
   const isRevoked = verification.status === "Revoked"
@@ -172,7 +171,9 @@ export default async function VerifyCertificatePage({
           <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">
             {isRevoked
               ? `Revocation Reason: ${verification.revocationReason || "Revoked by issuing authority"}`
-              : "This official credential was cryptographically signed and independently verified against the offline Root Certificate Authority."}
+              : isValid
+                ? "This credential was cryptographically verified against the trusted certificate authority."
+                : "The certificate could not be independently verified. Please try again later."}
           </p>
         </div>
 
@@ -181,13 +182,7 @@ export default async function VerifyCertificatePage({
           <div className="print-sheet relative mx-auto w-full max-w-3xl rise rise-1">
             <TamperProofCertificateViewer
               pdfUrl={`/api/certificates/${encodeURIComponent(verification.publicId)}/download`}
-              publicId={verification.publicId}
-              certificateNumber={verification.certificateNumber}
               participantName={verification.participantName}
-              eventName={verification.eventName}
-              issueDate={verification.issuedAtUtc ? formatDate(verification.issuedAtUtc) : "—"}
-              template={template}
-              isCustomTemplate={isCustomTemplate}
             />
             <p className="print-hide mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
               <CalendarDays className="size-3.5" />

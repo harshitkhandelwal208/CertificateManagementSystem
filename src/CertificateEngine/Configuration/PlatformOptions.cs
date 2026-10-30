@@ -7,9 +7,7 @@ public sealed class PlatformOptions
     public string OrganizationName { get; init; } = "Your NGO";
     public string PublicBaseUrl { get; init; } = "http://localhost:5001";
     public string DataDirectory { get; init; } = "data";
-    // This only makes a zero-configuration local test launch usable. Replace it in every
-    // deployed environment with a random secret supplied through configuration.
-    public string InternalApiKey { get; init; } = "local-testing-key-change-before-production-2026";
+    public string InternalApiKey { get; init; } = string.Empty;
     public int PollIntervalSeconds { get; init; } = 90;
     public int DeliveryPollSeconds { get; init; } = 5;
     public int MaxDeliveryAttempts { get; init; } = 5;

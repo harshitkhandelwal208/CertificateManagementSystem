@@ -1,22 +1,23 @@
 "use client"
 
 import Link from "next/link"
-import { Suspense } from "react"
-import { useSearchParams } from "next/navigation"
+import { Suspense, useState } from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import { ArrowLeft, ArrowRight, QrCode, ShieldCheck, PenLine } from "lucide-react"
 import { AppShell } from "@/components/dashboard/app-shell"
 import { Stepper } from "@/components/dashboard/stepper"
 import { Button } from "@/components/ui/button"
-import { CertificatePreview } from "@/components/certificate-preview"
 import { CustomPdfPreview, useCustomPdfTemplate } from "@/components/template/custom-pdf-preview"
-import { credentialTemplates } from "@/lib/templates"
-import { loadDraft } from "@/app/events/new/page"
+import { normalizeTemplateId } from "@/lib/template-layout"
+import type { TemplateLayoutConfig } from "@/lib/template-layout"
+import { loadDraft } from "@/lib/event-draft"
 
 function PreviewContent() {
-  const searchParams = useSearchParams()
-  const templateId = searchParams.get("template") ?? credentialTemplates[0].id
-  const showCustomPreview = searchParams.get("custom") === "1"
-  const template = credentialTemplates.find((t) => t.id === templateId) ?? credentialTemplates[0]
+  const router = useRouter()
+  const [layout, setLayout] = useState<TemplateLayoutConfig | null>(null)
+  const [saving, setSaving] = useState(false)
+  const templateId = normalizeTemplateId("new-event")
   const customTemplate = useCustomPdfTemplate("new-event")
   const draft = loadDraft()
   const eventName = draft?.name ?? "Your Event Name"
@@ -29,7 +30,7 @@ function PreviewContent() {
   return (
     <AppShell>
       <Link
-        href={`/events/new/template?template=${templateId}`}
+        href="/events/new/template"
         className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
@@ -37,7 +38,7 @@ function PreviewContent() {
       </Link>
 
       <div className="mb-8 flex flex-col gap-1.5">
-        <Stepper steps={["Event details", "Design", "Confirm"]} current={3} />
+        <Stepper steps={["Event details", "Upload template", "Confirm"]} current={3} />
         <h1 className="font-serif text-2xl font-semibold text-foreground sm:text-3xl">Confirm your sample</h1>
         <p className="max-w-xl text-sm text-muted-foreground">
           Here&apos;s a preview of what recipients will receive, complete with a scannable QR code and
@@ -47,17 +48,10 @@ function PreviewContent() {
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_minmax(0,300px)]">
         <div className="mx-auto w-full max-w-xl">
-          {showCustomPreview && customTemplate.pdfUrl ? (
-            <CustomPdfPreview storageKey="new-event" className="rise" sampleName="Sample Recipient" sampleEvent={eventName} />
+          {customTemplate.pdfUrl ? (
+            <CustomPdfPreview storageKey="new-event" className="rise" sampleName="John Doe" onLayoutChange={setLayout} />
           ) : (
-            <CertificatePreview
-              className="rise"
-              template={template}
-              recipientName="Sample Recipient"
-              eventName={eventName}
-              issueDate={new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-              credentialId="SAMPLE-CERT-2026"
-            />
+            <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">Upload a PDF, PNG, JPG, or JPEG before continuing.</div>
           )}
         </div>
 
@@ -97,10 +91,18 @@ function PreviewContent() {
         <Button variant="outline" render={<Link href={`/events/new/template`} />}>
           Back
         </Button>
-        <Button render={<Link href={`/events/${eventSlug}/issue?template=${templateId}&custom=${showCustomPreview ? "1" : "0"}&customKey=new-event&name=${encodeURIComponent(eventName)}`} />}>
-          Looks good, continue
-          <ArrowRight data-icon="inline-end" />
-        </Button>
+        <Button disabled={!customTemplate.pdfUrl || !layout || saving} onClick={async () => {
+          if (!layout) return
+          setSaving(true)
+          try {
+            const res = await fetch("/api/templates/layout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ templateKey: "new-event", layout }) })
+            if (!res.ok) throw new Error("Could not save the template layout.")
+            const created = await fetch("/api/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventId: eventSlug, eventName, templateId }) })
+            if (!created.ok) throw new Error((await created.json()).error || "Could not create the event.")
+            const event = await created.json()
+            router.push(`/events/${eventSlug}/issue?template=${encodeURIComponent(event.templateId)}&custom=1&customKey=new-event&name=${encodeURIComponent(eventName)}`)
+          } catch (error) { toast.error(error instanceof Error ? error.message : "Could not create the event."); setSaving(false) }
+        }}>Looks good, continue <ArrowRight data-icon="inline-end" /></Button>
       </div>
     </AppShell>
   )

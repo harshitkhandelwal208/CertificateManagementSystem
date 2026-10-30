@@ -13,7 +13,8 @@ using System.Net;
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration
     .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: true)
-    .AddJsonFile(Path.Combine(Directory.GetCurrentDirectory(), "src/CertificateEngine/appsettings.json"), optional: true);
+    .AddJsonFile(Path.Combine(Directory.GetCurrentDirectory(), "src/CertificateEngine/appsettings.json"), optional: true)
+    .AddEnvironmentVariables();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
@@ -40,6 +41,8 @@ builder.Services.AddCertificateDelivery(builder.Configuration);
 var app = builder.Build();
 app.UseCors();
 await app.Services.GetRequiredService<CertificateDatabase>().InitializeAsync(CancellationToken.None);
+
+if (args.Length > 0 && args[0] == "initialize") return 0;
 
 if (args.Length > 0 && (args[0] == "issue" || args[0] == "issue-batch"))
 {
@@ -89,6 +92,13 @@ if (args.Length > 0 && (args[0] == "issue" || args[0] == "issue-batch"))
         if (!string.IsNullOrWhiteSpace(body.TemplateId))
         {
             eventOptions.TemplateId = body.TemplateId.Trim();
+        }
+
+        try { artifacts.ValidateTemplate(eventOptions.TemplateId, body.Layout); }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
         }
 
         var sourceId = Guid.NewGuid().ToString("N");
@@ -147,6 +157,13 @@ if (args.Length > 0 && (args[0] == "issue" || args[0] == "issue-batch"))
         if (!string.IsNullOrWhiteSpace(body.TemplateId))
         {
             eventOptions.TemplateId = body.TemplateId.Trim();
+        }
+
+        try { artifacts.ValidateTemplate(eventOptions.TemplateId, body.Layout); }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
         }
 
         var results = new List<object>();
@@ -320,8 +337,16 @@ app.MapPost("/internal/demo/issue", async (DemoIssueRequest body, HttpRequest re
         EventName = string.IsNullOrWhiteSpace(body.EventName)
             ? (targetEventId == "local-demo" ? "Local testing event" : targetEventId)
             : body.EventName.Trim(),
-        TemplateId = "default"
+        TemplateId = string.IsNullOrWhiteSpace(body.TemplateId) ? "default" : body.TemplateId.Trim()
     };
+
+    if (!string.IsNullOrWhiteSpace(body.EventName)) eventOptions.EventName = body.EventName.Trim();
+    if (!string.IsNullOrWhiteSpace(body.TemplateId)) eventOptions.TemplateId = body.TemplateId.Trim();
+    try { artifacts.ValidateTemplate(eventOptions.TemplateId, body.Layout); }
+    catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 
     var sourceId = Guid.NewGuid().ToString("N");
     var submission = new SheetSubmission(
@@ -360,6 +385,14 @@ app.MapPost("/internal/issue/batch", async (BatchIssueRequest body, HttpRequest 
             : body.EventName.Trim(),
         TemplateId = string.IsNullOrWhiteSpace(body.TemplateId) ? "default" : body.TemplateId.Trim()
     };
+
+    if (!string.IsNullOrWhiteSpace(body.EventName)) eventOptions.EventName = body.EventName.Trim();
+    if (!string.IsNullOrWhiteSpace(body.TemplateId)) eventOptions.TemplateId = body.TemplateId.Trim();
+    try { artifacts.ValidateTemplate(eventOptions.TemplateId, body.Layout); }
+    catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 
     var results = new List<object>();
     foreach (var recipient in body.Recipients)

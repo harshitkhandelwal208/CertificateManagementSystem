@@ -495,3 +495,14 @@
     }
   }
 }
+@font-face {
+  font-family: "Certificate Times New Roman";
+  src: url("/api/templates/times-font?weight=regular") format("truetype");
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "Certificate Times New Roman";
+  src: url("/api/templates/times-font?weight=bold") format("truetype");
+  font-weight: 700;
+}

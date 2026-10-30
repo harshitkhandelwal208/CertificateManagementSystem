@@ -4,6 +4,7 @@ import fsSync from "node:fs"
 import path from "node:path"
 
 import { normalizeTemplateId } from "@/lib/template-layout"
+import { prepareTemplate } from "@/lib/prepare-template"
 
 export const dynamic = "force-dynamic"
 
@@ -14,16 +15,15 @@ export async function POST(request: Request) {
     const key = formData.get("templateKey")
 
     if (!(file instanceof File) || typeof key !== "string") {
-      return NextResponse.json({ error: "A PDF file and template key are required." }, { status: 400 })
+      return NextResponse.json({ error: "A PDF, PNG, JPG, or JPEG file and template key are required." }, { status: 400 })
     }
     if (file.size === 0 || file.size > 10 * 1024 * 1024) {
-      return NextResponse.json({ error: "PDF must be between 1 byte and 10MB." }, { status: 400 })
+      return NextResponse.json({ error: "File must be between 1 byte and 10MB." }, { status: 400 })
     }
 
-    const bytes = Buffer.from(await file.arrayBuffer())
-    if (bytes.subarray(0, 4).toString("ascii") !== "%PDF") {
-      return NextResponse.json({ error: "The uploaded file is not a valid PDF." }, { status: 400 })
-    }
+    let bytes: Uint8Array
+    try { bytes = await prepareTemplate(new Uint8Array(await file.arrayBuffer()), file.name) }
+    catch { return NextResponse.json({ error: "Upload a valid PDF, PNG, JPG, or JPEG file." }, { status: 400 }) }
 
     const templateId = normalizeTemplateId(key)
     const dataDir = process.env.DATA_DIR && fsSync.existsSync(process.env.DATA_DIR)
@@ -35,6 +35,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ templateId, fileName: file.name })
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not save PDF template." }, { status: 500 })
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not save certificate template." }, { status: 500 })
   }
 }

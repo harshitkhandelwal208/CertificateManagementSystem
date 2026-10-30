@@ -17,12 +17,7 @@ async function downloadCertificate(publicId: string) {
   try {
     const res = await fetch(`/api/certificates/${encodeURIComponent(publicId)}/download`)
     if (!res.ok) {
-      // Fallback to print dialog
-      toast.info("Print dialog opened", {
-        description: 'Choose "Save as PDF" as the destination to download your certificate.',
-      })
-      window.print()
-      return
+      throw new Error("The issued PDF is unavailable.")
     }
     const blob = await res.blob()
     const url = URL.createObjectURL(blob)
@@ -35,11 +30,7 @@ async function downloadCertificate(publicId: string) {
     URL.revokeObjectURL(url)
     toast.success("Certificate downloaded")
   } catch {
-    // Fallback to print dialog
-    toast.info("Print dialog opened", {
-      description: 'Choose "Save as PDF" as the destination to download your certificate.',
-    })
-    window.print()
+    toast.error("Certificate download failed", { description: "The issued PDF is unavailable. Please try again later." })
   }
 }
 

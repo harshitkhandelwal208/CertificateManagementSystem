@@ -65,7 +65,6 @@ export default function LoginPage() {
                 type="email"
                 autoComplete="email"
                 placeholder="admin@credentia.local"
-                defaultValue="admin@credentia.local"
                 required
                 disabled={submitting}
               />

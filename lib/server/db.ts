@@ -28,6 +28,12 @@ export function getDb(): DatabaseSync {
       PRAGMA synchronous = NORMAL;
       PRAGMA foreign_keys = ON;
       PRAGMA busy_timeout = 10000;
+      CREATE TABLE IF NOT EXISTS events (
+        event_id TEXT PRIMARY KEY COLLATE NOCASE,
+        event_name TEXT NOT NULL,
+        template_id TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
     `)
   }
   return dbInstance

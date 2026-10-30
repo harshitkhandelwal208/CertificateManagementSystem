@@ -2,21 +2,22 @@
 
 import Link from "next/link"
 import { Suspense, useEffect, useState } from "react"
-import { useParams, useSearchParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
+import { toast } from "sonner"
 import { ArrowLeft, ArrowRight, QrCode, ShieldCheck, PenLine } from "lucide-react"
 import { AppShell } from "@/components/dashboard/app-shell"
 import { Stepper } from "@/components/dashboard/stepper"
 import { Button } from "@/components/ui/button"
-import { CertificatePreview } from "@/components/certificate-preview"
 import { CustomPdfPreview, useCustomPdfTemplate } from "@/components/template/custom-pdf-preview"
-import { credentialTemplates } from "@/lib/templates"
+import { normalizeTemplateId } from "@/lib/template-layout"
+import type { TemplateLayoutConfig } from "@/lib/template-layout"
 
 function PreviewContent() {
   const params = useParams<{ id: string }>()
-  const searchParams = useSearchParams()
-  const templateId = searchParams.get("template") ?? credentialTemplates[0].id
-  const showCustomPreview = searchParams.get("custom") === "1"
-  const template = credentialTemplates.find((t) => t.id === templateId) ?? credentialTemplates[0]
+  const router = useRouter()
+  const [layout, setLayout] = useState<TemplateLayoutConfig | null>(null)
+  const [saving, setSaving] = useState(false)
+  const templateId = normalizeTemplateId(`event:${params.id}`)
   const customTemplate = useCustomPdfTemplate(`event:${params.id}`)
   const [eventName, setEventName] = useState(params.id)
 
@@ -40,7 +41,7 @@ function PreviewContent() {
       </Link>
 
       <div className="mb-8 flex flex-col gap-1.5">
-        <Stepper steps={["Event details", "Design", "Confirm"]} current={3} />
+        <Stepper steps={["Event details", "Upload template", "Confirm"]} current={3} />
         <h1 className="font-serif text-2xl font-semibold text-foreground sm:text-3xl">Confirm your sample</h1>
         <p className="max-w-xl text-sm text-muted-foreground">
           Here&apos;s a preview of what recipients will receive, complete with a scannable QR code and
@@ -50,17 +51,10 @@ function PreviewContent() {
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_minmax(0,300px)]">
         <div className="mx-auto w-full max-w-xl">
-          {showCustomPreview && customTemplate.pdfUrl ? (
-            <CustomPdfPreview storageKey={`event:${params.id}`} className="rise" sampleName="John Doe" sampleEvent={eventName} />
+          {customTemplate.pdfUrl ? (
+            <CustomPdfPreview storageKey={`event:${params.id}`} className="rise" sampleName="John Doe" onLayoutChange={setLayout} />
           ) : (
-            <CertificatePreview
-              className="rise"
-              template={template}
-              recipientName="John Doe"
-              eventName={eventName}
-              issueDate="Sep 20th, 2026"
-              credentialId="7b6c197e-d663-44e4-b455-1d0c864e1425"
-            />
+            <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">Upload a PDF, PNG, JPG, or JPEG before continuing.</div>
           )}
         </div>
 
@@ -100,10 +94,15 @@ function PreviewContent() {
         <Button variant="outline" render={<Link href={`/events/${params.id}/template`} />}>
           Back
         </Button>
-        <Button render={<Link href={`/events/${params.id}/issue?template=${templateId}&custom=${showCustomPreview ? "1" : "0"}&customKey=event:${params.id}&name=${encodeURIComponent(eventName)}`} />}>
-          Looks good, continue
-          <ArrowRight data-icon="inline-end" />
-        </Button>
+        <Button disabled={!customTemplate.pdfUrl || !layout || saving} onClick={async () => {
+          if (!layout) return
+          setSaving(true)
+          try {
+            const res = await fetch("/api/templates/layout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ templateKey: `event:${params.id}`, layout }) })
+            if (!res.ok) throw new Error("Could not save the template layout.")
+            router.push(`/events/${params.id}/issue?template=${templateId}&custom=1&customKey=${encodeURIComponent(`event:${params.id}`)}&name=${encodeURIComponent(eventName)}`)
+          } catch { toast.error("Could not save the template layout. Please try again."); setSaving(false) }
+        }}>Looks good, continue <ArrowRight data-icon="inline-end" /></Button>
       </div>
     </AppShell>
   )

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { issueSingleCertificate } from '@/lib/server/issuer';
+import { getDb } from '@/lib/server/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,9 @@ export async function POST(request: Request) {
     if (!fullName || typeof fullName !== 'string' || !fullName.trim()) {
       return NextResponse.json({ error: 'FullName is required.' }, { status: 400 });
     }
+    if (typeof templateId !== 'string' || !templateId.startsWith('custom-')) {
+      return NextResponse.json({ error: 'An uploaded certificate template is required.' }, { status: 400 });
+    }
 
     const result = await issueSingleCertificate({
       fullName: fullName.trim(),
@@ -21,6 +25,8 @@ export async function POST(request: Request) {
       templateId: templateId?.trim(),
       layout,
     });
+
+    if (typeof eventId === 'string') getDb().prepare('UPDATE events SET template_id = ? WHERE event_id = ?').run(templateId.trim(), eventId.trim());
 
     return NextResponse.json(result);
   } catch (error: any) {

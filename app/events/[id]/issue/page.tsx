@@ -10,18 +10,10 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { FieldLabel } from "@/components/ui/field"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { CsvDropzone, type ParsedRecipient } from "@/components/issue/csv-dropzone"
 import { ManualRecipients } from "@/components/issue/manual-recipients"
 import { GoogleSheetsPanel } from "@/components/issue/google-sheets-panel"
-import { credentialTemplates } from "@/lib/templates"
+import { AVAILABLE_FONTS, normalizeTemplateId, type TemplateLayoutConfig } from "@/lib/template-layout"
 
 interface Recipient {
   name: string
@@ -33,12 +25,11 @@ function IssueContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const customTemplateKey = searchParams.get("custom") === "1" ? searchParams.get("customKey") : null
-  const customTemplateId = customTemplateKey
-    ? `custom-${customTemplateKey.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "")}`
-    : null
-  const defaultTemplate = customTemplateId ?? searchParams.get("template") ?? credentialTemplates[0].id
-  const [templateId, setTemplateId] = useState(defaultTemplate)
-  const [eventCustomTemplate, setEventCustomTemplate] = useState<string | null>(null)
+  const queryTemplate = searchParams.get("template")
+  const customTemplateId = queryTemplate?.startsWith("custom-") ? queryTemplate : customTemplateKey ? normalizeTemplateId(customTemplateKey) : null
+  const [templateId, setTemplateId] = useState(customTemplateId ?? "")
+  const [layout, setLayout] = useState<TemplateLayoutConfig | null>(null)
+  const [timesUnavailable, setTimesUnavailable] = useState(false)
   const [consent, setConsent] = useState(false)
   const [recipientsValid, setRecipientsValid] = useState(false)
   const [manualRecipients, setManualRecipients] = useState<Recipient[]>([])
@@ -54,18 +45,41 @@ function IssueContent() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.eventName) setEventName(data.eventName)
-        if (data?.templateId) {
-          setTemplateId((prev) => (prev === credentialTemplates[0].id ? data.templateId : prev))
-          if (typeof data.templateId === "string" && data.templateId.startsWith("custom-")) {
-            setEventCustomTemplate(data.templateId)
-          }
+        if (typeof data?.templateId === "string" && data.templateId.startsWith("custom-")) {
+          setTemplateId((prev) => prev || data.templateId)
         }
       })
       .catch(() => {})
   }, [params.id])
 
+  useEffect(() => {
+    if (!templateId) return
+    let active = true
+    fetch(`/api/templates/layout?templateKey=${encodeURIComponent(templateId)}`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((saved: TemplateLayoutConfig | null) => {
+        if (!active) return
+        try {
+          const cached = customTemplateKey && localStorage.getItem(`certificate-layout:${customTemplateKey}`)
+          if (cached) saved = JSON.parse(cached) as TemplateLayoutConfig
+        } catch {}
+        setLayout(saved)
+      })
+      .catch(() => { if (active) setLayout(null) })
+    return () => { active = false }
+  }, [templateId, customTemplateKey])
+
+  useEffect(() => {
+    if (layout?.fontFamily !== "Times New Roman") { setTimesUnavailable(false); return }
+    let active = true
+    fetch(`/api/templates/times-font?weight=${layout.fontWeight === "bold" ? "bold" : "regular"}`)
+      .then((res) => { if (active) setTimesUnavailable(!res.ok) })
+      .catch(() => { if (active) setTimesUnavailable(true) })
+    return () => { active = false }
+  }, [layout?.fontFamily, layout?.fontWeight])
+
   const activeRecipientCount = mode === "manual" ? manualRecipients.filter((r) => r.name.trim()).length : csvRecipients.length
-  const canSubmit = consent && !submitting && (
+  const canSubmit = templateId.startsWith("custom-") && Boolean(layout) && consent && !submitting && (
     (mode === "manual" && recipientsValid && manualRecipients.length > 0) ||
     (mode === "csv" && csvRecipients.length > 0)
   )
@@ -76,7 +90,7 @@ function IssueContent() {
 
     try {
       let recipients: Recipient[] = []
-
+      if (!layout) throw new Error("The template layout could not be loaded.")
       if (mode === "manual") {
         recipients = manualRecipients.filter((r) => r.name.trim())
       } else if (mode === "csv") {
@@ -89,6 +103,16 @@ function IssueContent() {
         return
       }
 
+      const saveLayout = await fetch("/api/templates/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ templateKey: templateId, layout }),
+      })
+      if (!saveLayout.ok) throw new Error("Could not save the certificate layout.")
+      if (customTemplateKey) {
+        try { localStorage.setItem(`certificate-layout:${customTemplateKey}`, JSON.stringify(layout)) } catch {}
+      }
+
       if (recipients.length === 1) {
         const res = await fetch("/api/issue", {
           method: "POST",
@@ -99,6 +123,7 @@ function IssueContent() {
             eventId: params.id,
             eventName: eventName,
             templateId,
+            layout,
           }),
         })
         if (!res.ok) {
@@ -121,6 +146,7 @@ function IssueContent() {
             eventId: params.id,
             eventName: eventName,
             templateId,
+            layout,
           }),
         })
         if (!res.ok) {
@@ -133,9 +159,13 @@ function IssueContent() {
         }
         const results = await res.json()
         const succeeded = results.filter((r: any) => r.success).length
-        toast.success("Batch Issuance Complete", {
-          description: `Successfully issued ${succeeded} of ${recipients.length} certificates.`,
-        })
+        const firstError = results.find((r: any) => !r.success)?.error
+        if (succeeded === 0) throw new Error(firstError || "No certificates were issued.")
+        if (succeeded < recipients.length) {
+          toast.warning("Some certificates could not be issued", { description: `Issued ${succeeded} of ${recipients.length}. ${firstError || ""}` })
+        } else {
+          toast.success("Batch Issuance Complete", { description: `Successfully issued ${succeeded} of ${recipients.length} certificates.` })
+        }
       }
 
       router.push(`/events/${params.id}`)
@@ -202,33 +232,21 @@ function IssueContent() {
         </div>
 
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-          <FieldLabel htmlFor="credential-template">Certificate Design Template</FieldLabel>
-          <Select value={templateId} onValueChange={(v) => setTemplateId(String(v))}>
-            <SelectTrigger id="credential-template" className="mt-2 w-full sm:w-80">
-              <SelectValue placeholder="Select template" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {customTemplateId && (
-                  <SelectItem value={customTemplateId}>Uploaded PDF template</SelectItem>
-                )}
-                {eventCustomTemplate && eventCustomTemplate !== customTemplateId && (
-                  <SelectItem value={eventCustomTemplate}>Assigned PDF template ({eventCustomTemplate})</SelectItem>
-                )}
-                {credentialTemplates.map((template) => (
-                  <SelectItem key={template.id} value={template.id}>
-                    <span
-                      className="size-2.5 rounded-full"
-                      style={{ backgroundColor: template.accent }}
-                    />
-                    {template.name}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-
-
+          <FieldLabel>Certificate template</FieldLabel>
+          {templateId ? (
+            <p className="mt-2 text-sm text-muted-foreground">Your uploaded template will be used for these certificates.</p>
+          ) : (
+            <p className="mt-2 text-sm text-muted-foreground">Upload a certificate template before issuing. <Link className="font-medium text-primary underline" href={`/events/${params.id}/template`}>Upload template</Link></p>
+          )}
+          {layout && (
+            <div className="mt-4">
+              <FieldLabel htmlFor="issue-font">Recipient name font</FieldLabel>
+              <select id="issue-font" value={layout.fontFamily} onChange={(event) => setLayout({ ...layout, fontFamily: event.target.value })} className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm sm:w-80">
+                {AVAILABLE_FONTS.map((font) => <option key={font.id} value={font.id}>{font.name}</option>)}
+              </select>
+              {timesUnavailable && <p className="mt-2 text-sm text-destructive">Times New Roman is not installed on this server. Choose Noto Sans, or install the Times New Roman font files before issuing.</p>}
+            </div>
+          )}
 
           <label className="mt-5 flex items-start gap-2.5 text-sm text-foreground cursor-pointer">
             <Checkbox checked={consent} onCheckedChange={(v) => setConsent(Boolean(v))} className="mt-0.5" />

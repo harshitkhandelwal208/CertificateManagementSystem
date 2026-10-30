@@ -26,7 +26,7 @@ export async function GET(
 
     // Remote engine proxy fallback for cloud hosting
     const engineUrl = process.env.ENGINE_URL;
-    const apiKey = process.env.ENGINE_API_KEY || 'local-testing-key-change-before-production-2026';
+    const apiKey = process.env.ENGINE_API_KEY || process.env.Platform__InternalApiKey || '';
     if (engineUrl && engineUrl.startsWith("http")) {
       const remoteRes = await fetch(`${engineUrl.replace(/\/+$/, '')}/manage/certificates/${publicId}/download`, {
         headers: {

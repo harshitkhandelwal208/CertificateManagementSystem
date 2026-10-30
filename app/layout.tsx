@@ -57,7 +57,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`dark ${fontSans.variable} ${fontSerif.variable} ${fontMono.variable}`} suppressHydrationWarning>
+    <html lang="en" data-scroll-behavior="smooth" className={`dark ${fontSans.variable} ${fontSerif.variable} ${fontMono.variable}`} suppressHydrationWarning>
       <body className="antialiased font-sans">
         {children}
         <Toaster position="bottom-right" richColors closeButton />

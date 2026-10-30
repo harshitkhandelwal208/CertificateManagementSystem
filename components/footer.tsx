@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ShieldCheck, ExternalLink } from "lucide-react"
+import { ExternalLink } from "lucide-react"
 
 export function Footer() {
   const currentYear = new Date().getFullYear()
@@ -21,8 +21,6 @@ export function Footer() {
             Public Verification Portal
             <ExternalLink className="size-3" />
           </a>
-          <span>&bull;</span>
-          <span>Offline Root CA Secured</span>
         </div>
       </div>
     </footer>

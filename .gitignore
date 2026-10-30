@@ -17,9 +17,9 @@ secrets/
 !.env.production.example
 data/*.db-shm
 data/*.db-wal
-!data/certificates.db
-!data/certificates/
-!data/templates/
+data/*.db
+data/certificates/
+data/templates/
 !data/ca/
 .env
 .env*.local

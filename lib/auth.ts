@@ -26,14 +26,11 @@ export function writeAuth(auth: StoredAuth | null) {
   if (!auth) {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
-    document.cookie = 'credentia-session=; path=/; max-age=0'
     return
   }
   localStorage.setItem(TOKEN_KEY, JSON.stringify(auth))
   // Keep legacy user key for components that read it
   localStorage.setItem(USER_KEY, JSON.stringify({ name: auth.user.name, email: auth.user.email }))
-  // Set session cookie for middleware auth check
-  document.cookie = 'credentia-session=1; path=/; max-age=2592000; SameSite=Lax'
 }
 
 export function getAccessToken(): string | null {
@@ -89,7 +86,7 @@ export async function refreshTokens(): Promise<StoredAuth | null> {
 
 export async function logout(): Promise<void> {
   const current = readAuth()
-  if (current?.refreshToken) {
+  if (current) {
     await fetch('/api/auth/logout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

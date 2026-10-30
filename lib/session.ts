@@ -31,12 +31,10 @@ export function writeStoredUser(user: AppUser | null) {
 
   if (!user) {
     window.localStorage.removeItem(SESSION_KEY)
-    document.cookie = 'credentia-session=; path=/; max-age=0'
     return
   }
 
   window.localStorage.setItem(SESSION_KEY, JSON.stringify(user))
-  document.cookie = 'credentia-session=1; path=/; max-age=2592000; SameSite=Lax'
 }
 
 export function getInitials(name: string) {

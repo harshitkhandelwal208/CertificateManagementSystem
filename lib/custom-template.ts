@@ -1,6 +1,6 @@
 const DATABASE_NAME = "certificate-management"
 const STORE_NAME = "custom-pdf-templates"
-const DATABASE_VERSION = 1
+const DATABASE_VERSION = 2
 
 interface StoredTemplate {
   key: string
@@ -14,6 +14,8 @@ function openDatabase(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(STORE_NAME)) {
         request.result.createObjectStore(STORE_NAME, { keyPath: "key" })
+      } else {
+        request.transaction?.objectStore(STORE_NAME).clear()
       }
     }
     request.onsuccess = () => resolve(request.result)

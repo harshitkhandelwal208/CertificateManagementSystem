@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
 import path from "node:path"
+import os from "node:os"
 
 import type { TemplateLayoutConfig } from "@/lib/template-layout"
 
@@ -29,6 +30,11 @@ function getEngineCwd(): string {
     return path.dirname(path.resolve(process.env.DATA_DIR))
   }
   return process.cwd()
+}
+
+function getDotnetCommand(): string {
+  const localDotnet = path.join(process.env.DOTNET_ROOT || path.join(os.homedir(), ".dotnet"), "dotnet")
+  return fs.existsSync(localDotnet) ? localDotnet : "dotnet"
 }
 
 export interface SingleIssueParams {
@@ -85,7 +91,6 @@ export function issueSingleCertificate(params: SingleIssueParams): Promise<Singl
 
   if (engineUrl && engineUrl.startsWith("http")) {
     return (async () => {
-      try {
         const res = await fetch(`${engineUrl.replace(/\/+$/, "")}/internal/demo/issue`, {
           method: "POST",
           headers: {
@@ -96,7 +101,9 @@ export function issueSingleCertificate(params: SingleIssueParams): Promise<Singl
         })
         if (!res.ok) {
           const errText = await res.text()
-          throw new Error(`Engine HTTP error ${res.status}: ${errText}`)
+          let detail = errText
+          try { detail = JSON.parse(errText).error || errText } catch {}
+          throw new Error(detail || `Engine HTTP error ${res.status}`)
         }
         const data = await res.json()
         return {
@@ -106,11 +113,6 @@ export function issueSingleCertificate(params: SingleIssueParams): Promise<Singl
           artifactPath: `certificates/${data.publicId}.pdf`,
           artifactSha256: "",
         } as SingleIssueResult
-      } catch (err: any) {
-        const fallbackDll = getDllPath()
-        if (!fs.existsSync(/*turbopackIgnore: true*/ fallbackDll)) throw err
-        return executeSingleCli(params)
-      }
     })()
   }
 
@@ -125,7 +127,7 @@ function executeSingleCli(params: SingleIssueParams): Promise<SingleIssueResult>
     }
     const cwd = getEngineCwd()
     const payload = JSON.stringify(params)
-    execFile("dotnet", [dllPath, "issue", payload], { cwd, env: { ...process.env } }, (err, stdout, stderr) => {
+    execFile(getDotnetCommand(), [dllPath, "issue", payload], { cwd, env: { ...process.env } }, (err, stdout, stderr) => {
       if (err) {
         return reject(new Error(stderr || err.message))
       }
@@ -145,7 +147,6 @@ export function issueBatchCertificates(params: BatchIssueParams): Promise<BatchI
 
   if (engineUrl && engineUrl.startsWith("http")) {
     return (async () => {
-      try {
         const res = await fetch(`${engineUrl.replace(/\/+$/, "")}/internal/issue/batch`, {
           method: "POST",
           headers: {
@@ -156,7 +157,9 @@ export function issueBatchCertificates(params: BatchIssueParams): Promise<BatchI
         })
         if (!res.ok) {
           const errText = await res.text()
-          throw new Error(`Engine HTTP error ${res.status}: ${errText}`)
+          let detail = errText
+          try { detail = JSON.parse(errText).error || errText } catch {}
+          throw new Error(detail || `Engine HTTP error ${res.status}`)
         }
         const rawResults = await res.json()
         const results = rawResults.map((r: any) => ({
@@ -172,11 +175,6 @@ export function issueBatchCertificates(params: BatchIssueParams): Promise<BatchI
           issuedCount: results.filter((r: any) => r.status === "Issued").length,
           results,
         } as BatchIssueResult
-      } catch (err: any) {
-        const fallbackDll = getDllPath()
-        if (!fs.existsSync(/*turbopackIgnore: true*/ fallbackDll)) throw err
-        return executeBatchCli(params)
-      }
     })()
   }
 
@@ -191,7 +189,7 @@ function executeBatchCli(params: BatchIssueParams): Promise<BatchIssueResult> {
     }
     const cwd = getEngineCwd()
     const payload = JSON.stringify(params)
-    execFile("dotnet", [dllPath, "issue-batch", payload], { cwd, env: { ...process.env } }, (err, stdout, stderr) => {
+    execFile(getDotnetCommand(), [dllPath, "issue-batch", payload], { cwd, env: { ...process.env } }, (err, stdout, stderr) => {
       if (err) {
         return reject(new Error(stderr || err.message))
       }

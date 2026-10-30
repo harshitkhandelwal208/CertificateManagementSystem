@@ -30,7 +30,6 @@ export async function GET(request: Request) {
       templateId.startsWith("custom-event-")
         ? path.join(templatesDirectory, `custom-${templateId.slice("custom-event-".length)}.json`)
         : null,
-      path.join(templatesDirectory, "custom-new-event.json"),
     ].filter(Boolean) as string[]
 
     for (const candidate of candidatePaths) {

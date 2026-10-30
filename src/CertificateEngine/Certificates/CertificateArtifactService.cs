@@ -42,8 +42,21 @@ public sealed class CertificateArtifactService : IDisposable
     public Task<(string ArtifactPath, string Sha256, string SignerThumbprint)> CreateAsync(CertificateRecord certificate, CancellationToken cancellationToken)
         => CreateAsync(certificate, null, cancellationToken);
 
+    public void ValidateTemplate(string templateId, TemplateLayoutDto? layout)
+    {
+        var templatePath = ResolveCustomTemplatePath(templateId);
+        var savedLayout = layout is null && templatePath is not null ? ResolveCustomTemplateLayout(templateId) : null;
+        var family = layout?.FontFamily ?? savedLayout?.FontFamily ?? "Noto Sans";
+        var bold = string.Equals(layout?.FontWeight ?? savedLayout?.FontWeight ?? "bold", "bold", StringComparison.OrdinalIgnoreCase);
+        var resolver = new EmbeddedFontResolver();
+        var face = resolver.ResolveTypeface(family, bold, false)
+            ?? throw new InvalidOperationException($"Font '{family}' is unavailable.");
+        _ = resolver.GetFont(face.FaceName) ?? throw new InvalidOperationException($"Font '{family}' is unavailable.");
+    }
+
     public async Task<(string ArtifactPath, string Sha256, string SignerThumbprint)> CreateAsync(CertificateRecord certificate, TemplateLayoutDto? explicitLayout, CancellationToken cancellationToken)
     {
+        ValidateTemplate(certificate.TemplateId, explicitLayout);
         var relative = Path.Combine("certificates", $"{certificate.PublicId}.pdf");
         var fullPath = Path.Combine(_database.DataDirectory, relative);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
@@ -139,32 +152,14 @@ public sealed class CertificateArtifactService : IDisposable
                 var font = new XFont(customLayout.FontFamily, fontSize, fontStyle);
                 var brush = ParseHexColor(customLayout.Color);
 
-                XRect nameRect;
-                XStringFormat format;
                 var x = (customLayout.XPercent / 100.0) * width;
                 var y = (customLayout.YPercent / 100.0) * height;
-
-                var boxHeight = fontSize * 1.5;
-                var yTop = y - (boxHeight / 2.0);
-
-                if (string.Equals(customLayout.TextAlign, "left", StringComparison.OrdinalIgnoreCase))
-                {
-                    nameRect = new XRect(x, yTop, Math.Max(width - x - 20, 100), boxHeight);
-                    format = XStringFormats.CenterLeft;
-                }
-                else if (string.Equals(customLayout.TextAlign, "right", StringComparison.OrdinalIgnoreCase))
-                {
-                    nameRect = new XRect(20, yTop, Math.Max(x - 20, 100), boxHeight);
-                    format = XStringFormats.CenterRight;
-                }
-                else
-                {
-                    var boxWidth = Math.Min(x, width - x) * 2;
-                    nameRect = new XRect(x - (boxWidth / 2.0), yTop, Math.Max(boxWidth, 100), boxHeight);
-                    format = XStringFormats.Center;
-                }
-
-                gfx.DrawString(certificate.ParticipantName, font, brush, nameRect, format);
+                var size = gfx.MeasureString(certificate.ParticipantName, font);
+                var left = string.Equals(customLayout.TextAlign, "left", StringComparison.OrdinalIgnoreCase) ? x
+                    : string.Equals(customLayout.TextAlign, "right", StringComparison.OrdinalIgnoreCase) ? x - size.Width
+                    : x - size.Width / 2;
+                var nameRect = new XRect(left, y - size.Height / 2, size.Width, size.Height);
+                gfx.DrawString(certificate.ParticipantName, font, brush, nameRect, XStringFormats.CenterLeft);
             }
             else
             {
@@ -197,6 +192,10 @@ public sealed class CertificateArtifactService : IDisposable
             }
         }
         gfx.DrawString("Scan to verify", new XFont("Noto Sans", 7), XBrushes.DimGray, new XRect(width - 125, height - 37, 95, 12), XStringFormats.TopCenter);
+        if (sourceDocument is not null)
+        {
+            for (var i = 1; i < sourceDocument.PageCount; i++) document.AddPage(sourceDocument.Pages[i]);
+        }
         using var stream = new MemoryStream(); document.Save(stream, false); return stream.ToArray();
     }
 
@@ -212,17 +211,6 @@ public sealed class CertificateArtifactService : IDisposable
             var stripped = "custom-" + safeId["custom-event-".Length..];
             var strippedPath = Path.Combine(_database.DataDirectory, "templates", $"{stripped}.pdf");
             if (File.Exists(strippedPath)) return strippedPath;
-        }
-
-        var fallback = Path.Combine(_database.DataDirectory, "templates", "custom-new-event.pdf");
-        if (File.Exists(fallback)) return fallback;
-
-        // Any custom pdf in data/templates
-        var templatesDir = Path.Combine(_database.DataDirectory, "templates");
-        if (Directory.Exists(templatesDir))
-        {
-            var anyPdf = Directory.GetFiles(templatesDir, "custom-*.pdf").FirstOrDefault();
-            if (anyPdf is not null) return anyPdf;
         }
 
         throw new FileNotFoundException("Custom PDF template was not found.", path);
@@ -243,15 +231,7 @@ public sealed class CertificateArtifactService : IDisposable
             }
             if (!File.Exists(path))
             {
-                var fallback = Path.Combine(_database.DataDirectory, "templates", "custom-new-event.json");
-                if (File.Exists(fallback)) path = fallback;
-                else
-                {
-                    var templatesDir = Path.Combine(_database.DataDirectory, "templates");
-                    var anyJson = Directory.Exists(templatesDir) ? Directory.GetFiles(templatesDir, "custom-*.json").FirstOrDefault() : null;
-                    if (anyJson is not null) path = anyJson;
-                    else return null;
-                }
+                return null;
             }
         }
         try

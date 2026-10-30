@@ -12,9 +12,15 @@ services:
       - key: Platform__OrganizationName
         value: Clinically Evolve Foundation
       - key: Platform__InternalApiKey
-        value: local-testing-key-change-before-production-2026
+        sync: false
       - key: Signing__PfxPassword
-        value: SigningPassword123!
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
       - key: DATA_DIR
         value: /app/data
       - key: ENGINE_DLL_PATH

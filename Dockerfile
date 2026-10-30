@@ -34,7 +34,7 @@ COPY components/ ./components/
 COPY lib/ ./lib/
 COPY public/ ./public/
 COPY data/ ./data/
-COPY next.config.mjs tsconfig.json postcss.config.mjs components.json ./
+COPY next.config.mjs tsconfig.json postcss.config.mjs components.json proxy.ts ./
 
 ENV NODE_ENV=production
 RUN pnpm build
@@ -57,7 +57,7 @@ COPY --from=node-build /app/.next/standalone ./web
 COPY --from=node-build /app/.next/static ./web/.next/static
 COPY --from=node-build /app/public ./web/public
 
-# Copy pre-seeded data directory (SQLite DB, CA certificates, and templates)
+# Copy the empty data directory; production keys must be provisioned separately
 COPY data/ ./data/
 
 # Symlink so /app/web/data resolves to /app/data directly
@@ -77,7 +77,6 @@ ENV ENGINE_CWD=/app
 ENV VERIFICATION_URL=http://127.0.0.1:5001
 ENV Platform__DataDirectory=/app/data
 ENV Platform__OrganizationName="Clinically Evolve Foundation"
-ENV Signing__PfxPassword=SigningPassword123!
 ENV DOTNET_RUNNING_IN_CONTAINER=true
 
 EXPOSE 3000

@@ -13,13 +13,10 @@ public sealed class EmbeddedFontResolver : IFontResolver
     public FontResolverInfo? ResolveTypeface(string familyName, bool bold, bool italic)
     {
         var norm = (familyName ?? "").ToLowerInvariant();
-        if (OperatingSystem.IsWindows())
-        {
-            if (norm.Contains("times")) return new FontResolverInfo(bold ? "Sys-Times-Bold" : "Sys-Times-Regular");
-            if (norm.Contains("georgia")) return new FontResolverInfo(bold ? "Sys-Georgia-Bold" : "Sys-Georgia-Regular");
-            if (norm.Contains("arial")) return new FontResolverInfo(bold ? "Sys-Arial-Bold" : "Sys-Arial-Regular");
-            if (norm.Contains("courier")) return new FontResolverInfo(bold ? "Sys-Courier-Bold" : "Sys-Courier-Regular");
-        }
+        if (norm.Contains("times")) return new FontResolverInfo(bold ? "Sys-Times-Bold" : "Sys-Times-Regular");
+        if (norm.Contains("georgia")) return new FontResolverInfo(bold ? "Sys-Georgia-Bold" : "Sys-Georgia-Regular");
+        if (norm.Contains("arial")) return new FontResolverInfo(bold ? "Sys-Arial-Bold" : "Sys-Arial-Regular");
+        if (norm.Contains("courier")) return new FontResolverInfo(bold ? "Sys-Courier-Bold" : "Sys-Courier-Regular");
         return new FontResolverInfo(bold ? BoldFace : RegularFace, mustSimulateBold: false, mustSimulateItalic: italic);
     }
 
@@ -27,18 +24,39 @@ public sealed class EmbeddedFontResolver : IFontResolver
     {
         RegularFace => ReadResource("CertificateEngine.Assets.Fonts.NotoSans-Regular.ttf"),
         BoldFace => ReadResource("CertificateEngine.Assets.Fonts.NotoSans-Bold.ttf"),
-        "Sys-Times-Regular" => TryReadFile(@"C:\Windows\Fonts\times.ttf") ?? ReadResource("CertificateEngine.Assets.Fonts.NotoSans-Regular.ttf"),
-        "Sys-Times-Bold" => TryReadFile(@"C:\Windows\Fonts\timesbd.ttf") ?? ReadResource("CertificateEngine.Assets.Fonts.NotoSans-Bold.ttf"),
-        "Sys-Georgia-Regular" => TryReadFile(@"C:\Windows\Fonts\georgia.ttf") ?? ReadResource("CertificateEngine.Assets.Fonts.NotoSans-Regular.ttf"),
-        "Sys-Georgia-Bold" => TryReadFile(@"C:\Windows\Fonts\georgiab.ttf") ?? ReadResource("CertificateEngine.Assets.Fonts.NotoSans-Bold.ttf"),
-        "Sys-Arial-Regular" => TryReadFile(@"C:\Windows\Fonts\arial.ttf") ?? ReadResource("CertificateEngine.Assets.Fonts.NotoSans-Regular.ttf"),
-        "Sys-Arial-Bold" => TryReadFile(@"C:\Windows\Fonts\arialbd.ttf") ?? ReadResource("CertificateEngine.Assets.Fonts.NotoSans-Bold.ttf"),
-        "Sys-Courier-Regular" => TryReadFile(@"C:\Windows\Fonts\cour.ttf") ?? ReadResource("CertificateEngine.Assets.Fonts.NotoSans-Regular.ttf"),
-        "Sys-Courier-Bold" => TryReadFile(@"C:\Windows\Fonts\courbd.ttf") ?? ReadResource("CertificateEngine.Assets.Fonts.NotoSans-Bold.ttf"),
+        "Sys-Times-Regular" => ReadTimesFont("CERTIFICATE_TIMES_REGULAR", @"C:\Windows\Fonts\times.ttf"),
+        "Sys-Times-Bold" => ReadTimesFont("CERTIFICATE_TIMES_BOLD", @"C:\Windows\Fonts\timesbd.ttf"),
+        "Sys-Georgia-Regular" => ReadConfiguredFont("CERTIFICATE_GEORGIA_REGULAR", "georgia.ttf"),
+        "Sys-Georgia-Bold" => ReadConfiguredFont("CERTIFICATE_GEORGIA_BOLD", "georgiab.ttf"),
+        "Sys-Arial-Regular" => ReadConfiguredFont("CERTIFICATE_ARIAL_REGULAR", "arial.ttf"),
+        "Sys-Arial-Bold" => ReadConfiguredFont("CERTIFICATE_ARIAL_BOLD", "arialbd.ttf"),
+        "Sys-Courier-Regular" => ReadConfiguredFont("CERTIFICATE_COURIER_REGULAR", "cour.ttf"),
+        "Sys-Courier-Bold" => ReadConfiguredFont("CERTIFICATE_COURIER_BOLD", "courbd.ttf"),
         _ => null
     };
 
     private static byte[]? TryReadFile(string path) => File.Exists(path) ? File.ReadAllBytes(path) : null;
+
+    private static byte[] ReadConfiguredFont(string environmentVariable, string fileName)
+    {
+        var configuredPath = Environment.GetEnvironmentVariable(environmentVariable);
+        var font = string.IsNullOrWhiteSpace(configuredPath) ? null : TryReadFile(configuredPath);
+        return font ?? TryReadFile(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), fileName))
+            ?? TryReadFile(Path.Combine("/usr/share/fonts/truetype/msttcorefonts", fileName))
+            ?? throw new InvalidOperationException($"Selected font is unavailable. Set {environmentVariable} to its font file.");
+    }
+
+    private static byte[] ReadTimesFont(string environmentVariable, string windowsPath)
+    {
+        var configuredPath = Environment.GetEnvironmentVariable(environmentVariable);
+        var font = string.IsNullOrWhiteSpace(configuredPath) ? null : TryReadFile(configuredPath);
+        var fileName = environmentVariable.EndsWith("BOLD", StringComparison.Ordinal) ? "timesbd.ttf" : "times.ttf";
+        return font ?? TryReadFile(windowsPath)
+            ?? TryReadFile(Path.Combine("/usr/share/fonts/truetype/msttcorefonts", fileName))
+            ?? TryReadFile(Path.Combine("/usr/share/fonts/truetype/msttcorefonts", fileName.ToUpperInvariant()))
+            ?? throw new InvalidOperationException(
+            $"Times New Roman is unavailable. Install the font and set {environmentVariable} to its font file.");
+    }
 
     private static byte[] ReadResource(string name)
     {

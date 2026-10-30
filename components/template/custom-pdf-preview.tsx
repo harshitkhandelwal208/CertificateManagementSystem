@@ -30,6 +30,7 @@ import {
 } from "@/lib/template-layout"
 import { cn } from "@/lib/utils"
 import { loadPdfJs } from "@/lib/pdfjs-loader"
+import { prepareTemplate } from "@/lib/prepare-template"
 
 interface CustomPdfPreviewProps {
   storageKey: string
@@ -47,7 +48,7 @@ async function uploadTemplateToServer(storageKey: string, file: Blob, fileName: 
   const response = await fetch("/api/templates/upload", { method: "POST", body: formData })
   if (!response.ok) {
     const data = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(data?.error || "Could not upload PDF template")
+    throw new Error(data?.error || "Could not upload certificate template")
   }
 }
 
@@ -67,7 +68,6 @@ export function useCustomPdfTemplate(storageKey: string) {
         objectUrl = URL.createObjectURL(template.blob)
         setPdfUrl(objectUrl)
         setFileName(template.name)
-        void uploadTemplateToServer(storageKey, template.blob, template.name).catch(() => {})
       })
       .catch(() => {
         if (active) setPdfUrl(null)
@@ -84,10 +84,13 @@ export function useCustomPdfTemplate(storageKey: string) {
 
   async function saveFile(file: File) {
     await uploadTemplateToServer(storageKey, file, file.name)
-    await saveCustomTemplate(storageKey, file)
+    const prepared = await prepareTemplate(new Uint8Array(await file.arrayBuffer()), file.name)
+    const pdfFile = new File([new Uint8Array(prepared)], file.name, { type: "application/pdf" })
+    await saveCustomTemplate(storageKey, pdfFile)
+    localStorage.removeItem(`certificate-layout:${storageKey}`)
     setPdfUrl((currentUrl) => {
       if (currentUrl) URL.revokeObjectURL(currentUrl)
-      return URL.createObjectURL(file)
+      return URL.createObjectURL(pdfFile)
     })
     setFileName(file.name)
   }
@@ -98,7 +101,7 @@ export function useCustomPdfTemplate(storageKey: string) {
 export function CustomPdfPreview({
   storageKey,
   className,
-  sampleName = "Alpha Briito",
+  sampleName = "John Doe",
   sampleEvent,
   allowCustomization = true,
   onLayoutChange,
@@ -107,12 +110,25 @@ export function CustomPdfPreview({
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [layout, setLayout] = useState<TemplateLayoutConfig>(DEFAULT_TEMPLATE_LAYOUT)
+  const layoutRef = useRef<TemplateLayoutConfig>(DEFAULT_TEMPLATE_LAYOUT)
   const [isDragging, setIsDragging] = useState(false)
   const [savedStatus, setSavedStatus] = useState<"saved" | "saving" | null>(null)
   const [showColorMenu, setShowColorMenu] = useState(false)
   const [aspectRatio, setAspectRatio] = useState<number>(1.414)
   const [renderingCanvas, setRenderingCanvas] = useState<boolean>(true)
   const [containerWidth, setContainerWidth] = useState<number>(842)
+  const [pageWidth, setPageWidth] = useState<number>(842)
+  const [pageHeight, setPageHeight] = useState<number>(595)
+  const [timesUnavailable, setTimesUnavailable] = useState(false)
+
+  useEffect(() => {
+    if (layout.fontFamily !== "Times New Roman") { setTimesUnavailable(false); return }
+    let active = true
+    fetch(`/api/templates/times-font?weight=${layout.fontWeight === "bold" ? "bold" : "regular"}`)
+      .then((response) => { if (active) setTimesUnavailable(!response.ok) })
+      .catch(() => { if (active) setTimesUnavailable(true) })
+    return () => { active = false }
+  }, [layout.fontFamily, layout.fontWeight])
 
   // Track container width for true-to-scale font sizing
   useEffect(() => {
@@ -132,7 +148,7 @@ export function CustomPdfPreview({
     })
     observer.observe(containerRef.current)
     return () => observer.disconnect()
-  }, [])
+  }, [pdfUrl, loading])
 
   // Render PDF directly to HTML5 Canvas (guarantees 100% 1:1 pixel coordinates without viewer toolbars)
   useEffect(() => {
@@ -149,6 +165,8 @@ export function CustomPdfPreview({
         if (!active) return
 
         const baseViewport = page.getViewport({ scale: 1 })
+        setPageWidth(baseViewport.width)
+        setPageHeight(baseViewport.height)
         const pageRatio = baseViewport.width / baseViewport.height
         setAspectRatio(pageRatio)
 
@@ -183,7 +201,12 @@ export function CustomPdfPreview({
     fetch(`/api/templates/layout?templateKey=${encodeURIComponent(storageKey)}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data: TemplateLayoutConfig | null) => {
+        try {
+          const cached = localStorage.getItem(`certificate-layout:${storageKey}`)
+          if (cached) data = JSON.parse(cached) as TemplateLayoutConfig
+        } catch {}
         if (active && data) {
+          layoutRef.current = data
           setLayout(data)
           onLayoutChange?.(data)
         }
@@ -221,15 +244,13 @@ export function CustomPdfPreview({
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
   const updateLayout = useCallback(
     (updater: (prev: TemplateLayoutConfig) => TemplateLayoutConfig) => {
-      setLayout((prev) => {
-        const next = updater(prev)
-        onLayoutChange?.(next)
-        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
-        debounceTimerRef.current = setTimeout(() => {
-          void saveLayoutToServer(next)
-        }, 350)
-        return next
-      })
+      const next = updater(layoutRef.current)
+      layoutRef.current = next
+      setLayout(next)
+      try { localStorage.setItem(`certificate-layout:${storageKey}`, JSON.stringify(next)) } catch {}
+      onLayoutChange?.(next)
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+      debounceTimerRef.current = setTimeout(() => { void saveLayoutToServer(next) }, 350)
     },
     [saveLayoutToServer, onLayoutChange]
   )
@@ -548,6 +569,8 @@ export function CustomPdfPreview({
         </div>
       )}
 
+      {timesUnavailable && <p className="text-sm text-destructive">Times New Roman is not installed on this server. Choose Noto Sans, or install the Times New Roman font files before issuing.</p>}
+
       {/* Interactive Certificate Canvas Stage */}
       <div
         ref={containerRef}
@@ -590,8 +613,8 @@ export function CustomPdfPreview({
         {/* Interactive Recipient Name Element */}
         <div
           className={cn(
-            "group/element absolute transition-all duration-75",
-            isDragging ? "cursor-grabbing opacity-90 scale-[1.02]" : "cursor-grab hover:scale-[1.01]"
+            "group/element absolute",
+            isDragging ? "cursor-grabbing" : "cursor-grab"
           )}
           style={{
             left: `${layout.xPercent}%`,
@@ -601,10 +624,10 @@ export function CustomPdfPreview({
         >
           <div
             className={cn(
-              "relative rounded px-3 py-1 transition-all",
+              "relative rounded transition-all",
               allowCustomization &&
-                "border-2 border-dashed border-transparent hover:border-primary/50 group-hover/element:bg-primary/5 group-hover/element:border-primary/60",
-              isDragging && "border-primary bg-primary/10 shadow-lg"
+                "outline outline-2 outline-dashed outline-transparent hover:outline-primary/50",
+              isDragging && "outline-primary bg-primary/10"
             )}
           >
             {/* Visual Drag Handle & Coords Tooltip */}
@@ -620,31 +643,27 @@ export function CustomPdfPreview({
             {/* Rendered Recipient Text */}
             <p
               style={{
-                fontFamily: layout.fontFamily,
-                fontSize: `${Math.max(12, Math.round(layout.fontSize * Math.max(0.35, containerWidth / 842)))}px`,
+                fontFamily: layout.fontFamily === "Times New Roman" ? '"Certificate Times New Roman", "Times New Roman", serif' : layout.fontFamily,
+                fontSize: `${layout.fontSize * containerWidth / pageWidth}px`,
                 fontWeight: layout.fontWeight === "bold" ? 700 : 400,
                 color: layout.color,
                 textAlign: layout.textAlign,
                 lineHeight: 1.15,
                 textShadow: "0 1px 2px rgba(255,255,255,0.7)",
               }}
-              className="whitespace-nowrap select-none tracking-tight"
+              className="whitespace-nowrap select-none"
             >
               {sampleName}
             </p>
 
-            {sampleEvent && (
-              <p
-                style={{
-                  fontFamily: layout.fontFamily,
-                  textAlign: layout.textAlign,
-                }}
-                className="mt-0.5 text-xs font-medium text-slate-800/80 drop-shadow-sm"
-              >
-                {sampleEvent}
-              </p>
-            )}
           </div>
+        </div>
+
+        <div className="pointer-events-none absolute bg-white" style={{ left: `${(pageWidth - 119) / pageWidth * 100}%`, top: `${(pageHeight - 119) / pageHeight * 100}%`, width: `${(Math.min(75, pageHeight - 130) + 8) / pageWidth * 100}%`, height: `${(Math.min(75, pageHeight - 130) + 8) / pageHeight * 100}%` }}>
+          <img src="/certificate/qr-code.png" alt="" className="h-full w-full object-contain" style={{ padding: `${4 * containerWidth / pageWidth}px` }} />
+        </div>
+        <div className="pointer-events-none absolute text-center text-[#696969]" style={{ left: `${(pageWidth - 125) / pageWidth * 100}%`, top: `${(pageHeight - 37) / pageHeight * 100}%`, width: `${95 / pageWidth * 100}%`, fontFamily: '"Noto Sans", sans-serif', fontSize: `${7 * containerWidth / pageWidth}px`, lineHeight: 1 }}>
+          Scan to verify
         </div>
 
         {/* Informative helper pill at bottom */}

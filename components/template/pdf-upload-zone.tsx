@@ -4,9 +4,10 @@ import { useRef, useState, useCallback } from "react"
 import { Upload, FileUp, AlertCircle, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { prepareTemplate } from "@/lib/prepare-template"
 
 interface PdfUploadZoneProps {
-  onFileAccepted: (file: File) => void
+  onFileAccepted: (file: File) => Promise<void>
   disabled?: boolean
 }
 
@@ -28,17 +29,17 @@ export function PdfUploadZone({ onFileAccepted, disabled }: PdfUploadZoneProps) 
   })
 
   const validateAndAcceptFile = useCallback(
-    (file: File) => {
+    async (file: File) => {
       // Check file extension
-      if (!file.name.toLowerCase().endsWith(".pdf")) {
+      if (!/\.(pdf|png|jpe?g)$/i.test(file.name)) {
         setStatus({
           fileName: file.name,
-          error: "Only PDF files are supported.",
+          error: "Only PDF, PNG, JPG, and JPEG files are supported.",
           success: false,
           progress: 0,
         })
         toast.error("Invalid file type", {
-          description: "Please upload a PDF file.",
+          description: "Please upload a PDF, PNG, JPG, or JPEG file.",
         })
         return
       }
@@ -58,40 +59,32 @@ export function PdfUploadZone({ onFileAccepted, disabled }: PdfUploadZoneProps) 
         return
       }
 
-      // Validate PDF by checking magic bytes
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const arr = new Uint8Array(e.target?.result as ArrayBuffer).subarray(0, 4)
-        const header = arr.reduce((str, byte) => str + String.fromCharCode(byte), "")
-        const isPdf = header === "%PDF"
-
-        if (!isPdf) {
+      try {
+        await prepareTemplate(new Uint8Array(await file.arrayBuffer()), file.name)
+      } catch {
           setStatus({
             fileName: file.name,
-            error: "This file is not a valid PDF.",
+            error: "This file is not a valid PDF, PNG, JPG, or JPEG.",
             success: false,
             progress: 0,
           })
-          toast.error("Invalid PDF", {
-            description: "The file doesn't appear to be a valid PDF.",
+          toast.error("Invalid file", {
+            description: "Please select a valid PDF, PNG, JPG, or JPEG file.",
           })
           return
-        }
+      }
 
-        // File is valid
+      try {
+        await onFileAccepted(file)
         setStatus({
           fileName: file.name,
           error: null,
           success: true,
           progress: 100,
         })
-        toast.success("PDF uploaded", {
-          description: `${file.name} is ready to use.`,
-        })
-        onFileAccepted(file)
+      } catch {
+        setStatus({ fileName: file.name, error: "Upload failed. Please try again.", success: false, progress: 0 })
       }
-
-      reader.readAsArrayBuffer(file.slice(0, 4))
     },
     [onFileAccepted]
   )
@@ -100,6 +93,7 @@ export function PdfUploadZone({ onFileAccepted, disabled }: PdfUploadZoneProps) 
     e.preventDefault()
     e.stopPropagation()
     setDragActive(false)
+    if (disabled) return
 
     const file = e.dataTransfer.files?.[0]
     if (file) {
@@ -200,20 +194,20 @@ export function PdfUploadZone({ onFileAccepted, disabled }: PdfUploadZoneProps) 
       </div>
       <div>
         <p className="text-sm font-medium text-foreground">
-          Drop your <span className="font-semibold text-primary">PDF</span> here
+          Drop your <span className="font-semibold text-primary">PDF or image</span> here
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          or click to browse — max 10MB, must be a valid PDF
+          or click to browse — PDF, PNG, JPG or JPEG, up to 10MB
         </p>
       </div>
       <input
         ref={inputRef}
         type="file"
-        accept=".pdf"
+        accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
         disabled={disabled}
         className="hidden"
         onChange={handleInputChange}
-        aria-label="Upload PDF template"
+        aria-label="Upload certificate template"
       />
     </div>
   )

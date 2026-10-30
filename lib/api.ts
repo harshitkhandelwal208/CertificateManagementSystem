@@ -3,7 +3,7 @@ export function getEngineUrl(): string {
 }
 
 export function getApiKey(): string {
-  return process.env.ENGINE_API_KEY || 'local-testing-key-change-before-production-2026';
+  return process.env.ENGINE_API_KEY || process.env.Platform__InternalApiKey || '';
 }
 
 export function getVerificationUrl(): string {

@@ -24,6 +24,10 @@ cleanup() {
 }
 trap cleanup SIGTERM SIGINT
 
+# Initialize a fresh database before the web gateway starts.
+cd /app
+dotnet /app/engine/CertificateEngine.dll initialize
+
 # 1. Start internal cryptographic verification service on 127.0.0.1:5001
 echo "Starting internal cryptographic verification service on 127.0.0.1:5001..."
 cd /app/verification

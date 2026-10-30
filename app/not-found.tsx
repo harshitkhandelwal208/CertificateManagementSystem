@@ -12,7 +12,6 @@ export default function NotFound() {
           </Link>
           <nav className="flex items-center gap-2">
             <Button variant="ghost" render={<Link href="/login">Log in</Link>} />
-            <Button render={<Link href="/signup">Get Started</Link>} />
           </nav>
         </header>
 

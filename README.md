@@ -97,8 +97,8 @@ dotnet run --project tools/CertificateEngine.CaTool -- init \
   --out data/ca \
   --root-years 20 \
   --signing-years 2 \
-  --root-password "RootPassword123!" \
-  --signing-password "SigningPassword123!" \
+  --root-password "$ROOT_CA_PASSWORD" \
+  --signing-password "$SIGNING_PASSWORD" \
   --force
 ```
 *Note: This creates `data/ca/root-ca.pem`, `data/ca/root-ca.pfx`, and `data/ca/signing.pfx`. Keep `root-ca.pfx` secure and move it to cold storage for production.*
@@ -108,6 +108,12 @@ Create `.env.local` for the Next.js frontend:
 ```bash
 VERIFICATION_URL=http://localhost:5001
 NEXT_PUBLIC_VERIFICATION_URL=http://localhost:5001
+```
+
+Initialize the database once before starting the web app:
+
+```bash
+dotnet run --project src/CertificateEngine -- initialize
 ```
 
 ### 3. Run the Platform (Exactly Two Services)
@@ -122,9 +128,14 @@ dotnet run --project src/CertificateVerification.Web --urls "http://localhost:50
 npx pnpm dev
 ```
 
-Default administrative account for testing:
-- **Email**: `admin@credentia.local`
-- **Password**: `Password123!`
+Set `ADMIN_EMAIL`, `ADMIN_PASSWORD` (at least 12 characters), and `SESSION_SECRET` (at least 32 random characters) in `.env.local`. Set `Platform__InternalApiKey` to a random value of at least 32 characters and configure the signing key separately.
+
+For Times New Roman certificate text on systems without the Windows fonts installed, set
+`CERTIFICATE_TIMES_REGULAR` and `CERTIFICATE_TIMES_BOLD` to the paths of the licensed
+regular and bold `.ttf` files before starting the app. The preview and certificate engine
+use these files. Other optional fonts can be configured with `CERTIFICATE_GEORGIA_REGULAR`,
+`CERTIFICATE_GEORGIA_BOLD`, `CERTIFICATE_ARIAL_REGULAR`, `CERTIFICATE_ARIAL_BOLD`,
+`CERTIFICATE_COURIER_REGULAR`, and `CERTIFICATE_COURIER_BOLD`.
 
 ---
 
@@ -144,7 +155,7 @@ npx pnpm build
 
 ## Cloud Hosting & Render Free Tier Deployment
 
-The platform is fully packaged for zero-cost cloud hosting on **Render Free Tier Web Services** (512 MB RAM limit). 
+The current implementation uses SQLite and local certificate files. It does not support Neon/PostgreSQL. Render free-tier storage is ephemeral, so do not deploy it for production records until durable storage and signing keys are configured.
 
 ### How It Works in Cloud Containers
 Render Free Tier assigns a single dynamic port via the `$PORT` environment variable and enforces a strict 512 MB RAM limit:
@@ -157,7 +168,7 @@ Render Free Tier assigns a single dynamic port via the `$PORT` environment varia
 1. Fork or push this repository to GitHub.
 2. In the [Render Dashboard](https://dashboard.render.com), click **New +** -> **Blueprint**.
 3. Select your repository. Render automatically reads `render.yaml` and provisions the Web Service using the Dockerfile.
-4. Set any custom environment variables (e.g. `Platform__OrganizationName`, `Signing__PfxPassword`).
+4. Configure the administrator, session, API, and signing secrets, and provide durable storage for the database, certificate artifacts, templates, and signing keys.
 5. Click **Apply**. Render will build and deploy the container with health checks automatically monitored at `/api/health`.
 
 ### Option 2: Deploy Manually as a Docker Web Service on Render
@@ -172,7 +183,7 @@ Render Free Tier assigns a single dynamic port via the `$PORT` environment varia
    - `NODE_ENV`: `production`
    - `Platform__OrganizationName`: `Clinically Evolve Foundation` (or your NGO name)
    - `Platform__InternalApiKey`: *(your secret key)*
-   - `Signing__PfxPassword`: `SigningPassword123!`
+   - `Signing__PfxPassword`: *(your signing key password)*
 5. Click **Create Web Service**.
 
 ### Option 3: Local Docker Testing
