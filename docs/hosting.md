@@ -78,12 +78,14 @@ with contents like:
 ```
 Platform__InternalApiKey=replace-with-a-long-random-value
 GoogleSheets__ServiceAccountJsonPath=/etc/certificate-engine/service-account.json
-Smtp__Password=replace-with-your-smtp-password
+Smtp__Password=replace-with-your-resend-api-key
 WhatsApp__AccessToken=replace-with-your-meta-access-token
 Signing__PfxPassword=replace-with-your-signing-pfx-password
 ```
 
 (Recall the `Section__Key` double-underscore convention maps to configuration key `Section:Key` — e.g. `Smtp__Password` sets `Smtp:Password`.) Anything non-secret can instead go in `/opt/certificate-engine/appsettings.Production.json`.
+
+For Resend SMTP, the application uses `smtp.resend.com` on port `465` with username `resend`. Keep `Smtp__Password` in this protected environment file (or an equivalent secret manager); it is the Resend API key and must never be committed or logged. Set `Smtp__FromAddress` to a Resend-verified sender for production. The development sender `onboarding@resend.dev` is configured by default.
 
 ## 6. Install the systemd service
 
