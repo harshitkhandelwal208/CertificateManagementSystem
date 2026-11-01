@@ -1,26 +1,26 @@
-import { createHmac, randomBytes } from 'node:crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { query } from './db'
 const lifetime = 8 * 60 * 60
-const digest = (token: string) => {
+function signature(payload: string): Buffer {
   const secret = process.env.SESSION_SECRET
   if (!secret || secret.length < 32) throw new Error('SESSION_SECRET is required')
-  return createHmac('sha256', secret).update(token).digest('hex')
+  return createHmac('sha256', secret).update(payload).digest()
 }
-export async function createSession(): Promise<string> {
-  const token = randomBytes(32).toString('hex')
-  await query('INSERT INTO auth_sessions(token_hash, expires_at) VALUES ($1,$2)', [digest(token), new Date(Date.now() + lifetime * 1000).toISOString()])
-  return token
+export function createSession(): string {
+  const payload = `${Math.floor(Date.now() / 1000) + lifetime}.${randomBytes(24).toString('hex')}`
+  return `${payload}.${signature(payload).toString('hex')}`
 }
-export async function validSession(token?: string): Promise<boolean> {
-  if (!token || !/^[a-f0-9]{64}$/.test(token)) return false
-  const [row] = await query('SELECT 1 FROM auth_sessions WHERE token_hash = $1 AND expires_at > $2', [digest(token), new Date().toISOString()])
-  return Boolean(row)
+export function validSession(token?: string): boolean {
+  if (!token) return false
+  const [expires, nonce, signed, extra] = token.split('.')
+  if (extra || !/^\d+$/.test(expires || '') || !/^[a-f0-9]{48}$/.test(nonce || '') || !/^[a-f0-9]{64}$/.test(signed || '') || Number(expires) <= Date.now() / 1000) return false
+  try { return timingSafeEqual(signature(`${expires}.${nonce}`), Buffer.from(signed, 'hex')) } catch { return false }
 }
-export async function deleteSession(token?: string) {
-  if (token && /^[a-f0-9]{64}$/.test(token)) await query('DELETE FROM auth_sessions WHERE token_hash = $1', [digest(token)])
-}
+export async function deleteSession(_token?: string) {}
 export async function throttleLogin(clientId: string): Promise<boolean> {
-  const keyHash = digest(clientId)
+  const secret = process.env.SESSION_SECRET
+  if (!secret || secret.length < 32) throw new Error('SESSION_SECRET is required')
+  const keyHash = createHmac('sha256', secret).update(clientId).digest('hex')
   const now = new Date()
   const windowStart = new Date(now.getTime() - 15 * 60 * 1000).toISOString()
   const [row] = await query<{ attempts: number }>(`INSERT INTO auth_attempts(key_hash, attempts, window_start) VALUES ($1, 1, $2)

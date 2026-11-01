@@ -9,8 +9,7 @@ export function getDb(): Pool {
     const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(url.hostname)
     // Keep certificate validation enabled even when the Neon URL uses sslmode=require.
     url.searchParams.delete('sslmode')
-    url.searchParams.delete('channel_binding')
-    pool = new Pool({ connectionString: url.toString(), ssl: local ? false : { rejectUnauthorized: true }, max: 3, connectionTimeoutMillis: 15000, idleTimeoutMillis: 30000, query_timeout: 30000 })
+    pool = new Pool({ connectionString: url.toString(), ssl: local ? false : { rejectUnauthorized: true, servername: url.hostname }, max: 3, connectionTimeoutMillis: 15000, idleTimeoutMillis: 30000, query_timeout: 30000 })
     pool.on('error', () => console.error('Idle database connection failed'))
   }
   return pool

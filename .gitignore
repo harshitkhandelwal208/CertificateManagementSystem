@@ -45,3 +45,6 @@ tsconfig.tsbuildinfo
 *.png
 !public/**/*.png
 !public/*.png
+.neon
+.agents/
+.codex/

@@ -6,7 +6,7 @@ export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const token = request.cookies.get('credentia-session')?.value
   let authenticated = false
-  if (token) { try { authenticated = await validSession(token) } catch { authenticated = false } }
+  if (token) authenticated = validSession(token)
   const publicApi = pathname === '/api/health' || pathname === '/api/auth/login' || pathname === '/api/auth/logout' || /^\/api\/certificates\/[^/]+\/download$/.test(pathname)
   if (pathname.startsWith('/api/')) {
     if (!publicApi && !authenticated) return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
